@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { Budget, QuotaDay } from './history';
+import { language, t } from './i18n';
 import { UsageRecord } from './transcripts';
 import { AccountUsage } from './usage';
 
@@ -14,6 +15,9 @@ export interface PanelAccount {
 
 export interface PanelData {
   generatedAt: number;
+  /** UI language and its translation table (empty for English), for the webview's own strings. */
+  lang?: string;
+  l10n?: Record<string, string>;
   accounts: PanelAccount[];
   records: UsageRecord[];
   /** The active account's weekly window, measured from the account-wide API value. */
@@ -30,17 +34,17 @@ export interface PanelData {
   error?: string;
 }
 
-/** The "Ver consumo" webview. One instance; reopening reveals and refreshes it. */
+/** The usage panel webview. One instance; reopening reveals and refreshes it. */
 export class UsagePanel {
   private static current: UsagePanel | undefined;
 
-  static show(extensionUri: vscode.Uri, load: () => Promise<PanelData>): void {
+  static show(extensionUri: vscode.Uri, title: string, load: () => Promise<PanelData>): void {
     if (UsagePanel.current) {
       UsagePanel.current.panel.reveal();
       void UsagePanel.current.refresh();
       return;
     }
-    const panel = vscode.window.createWebviewPanel('relevo.usage', 'Consumo de Claude', vscode.ViewColumn.Active, {
+    const panel = vscode.window.createWebviewPanel('relevo.usage', title, vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
@@ -80,7 +84,7 @@ export class UsagePanel {
     try {
       data = await this.load();
     } catch (e) {
-      data = { generatedAt: Date.now(), accounts: [], records: [], files: 0, ms: 0, error: String(e) };
+      data = { generatedAt: Date.now(), lang: language(), accounts: [], records: [], files: 0, ms: 0, error: String(e) };
     } finally {
       this.loading = false;
     }
@@ -92,16 +96,16 @@ export class UsagePanel {
     const media = (name: string) => webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', name));
     const nonce = crypto.randomBytes(16).toString('base64');
     return `<!DOCTYPE html>
-<html lang="es">
+<html lang="${language()}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${media('panel.css')}">
-<title>Consumo de Claude</title>
+<title>${t('Claude usage')}</title>
 </head>
 <body>
-<main id="app" class="loading"><p class="empty">Leyendo historial…</p></main>
+<main id="app" class="loading"><p class="empty">${t('Reading history…')}</p></main>
 <div id="tooltip" role="tooltip" hidden></div>
 <script nonce="${nonce}" src="${media('panel.js')}"></script>
 </body>

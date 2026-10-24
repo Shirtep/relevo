@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { t } from './i18n';
 
 export interface AccountConfig {
   id: string;
@@ -87,15 +88,15 @@ export function slugify(name: string): string {
 export function newAccountConfig(existing: AccountConfig[], name: string): { config: AccountConfig } | { error: string } {
   const label = name.trim();
   if (label === '') {
-    return { error: 'Escribe un nombre.' };
+    return { error: t('Type a name.') };
   }
   const taken = (s: string) => existing.some((c) => [c.id, c.label ?? ''].some((v) => v.trim().toLowerCase() === s.toLowerCase()));
   if (taken(label)) {
-    return { error: 'Ya hay una cuenta con ese nombre.' };
+    return { error: t('An account with that name already exists.') };
   }
   const slug = slugify(label);
   if (slug === '') {
-    return { error: 'Usa al menos una letra o un número.' };
+    return { error: t('Use at least one letter or number.') };
   }
   const used = new Set(existing.map((c) => (c.configDir ?? '').trim().toLowerCase()));
   let suffix = slug;

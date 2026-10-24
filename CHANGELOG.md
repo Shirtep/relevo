@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- English interface, with Spanish as a translation. The `relevo.language` setting picks it (by default it follows VS Code).
+- **Report a problem**: builds a report with versions, the window's state and the recent log, with emails, user and machine names and folder paths masked. Available from the account list, the usage tooltip and every error message.
+- Today's budget no longer moves during the day: the start of each quota day is worked out once and kept, so restarts, reloads or reinstalls don't change it.
+- More detailed log of switches, usage refreshes and errors.
+- Release workflow can be run by hand from the Actions tab.
+
 ## 0.1.0
 
 First public release.

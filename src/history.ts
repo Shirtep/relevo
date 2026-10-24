@@ -67,13 +67,27 @@ function usedBetween(incs: { t: number; inc: number }[], from: number, to: numbe
   return incs.filter((x) => x.t > from && x.t <= to).reduce((s, x) => s + x.inc, 0);
 }
 
-export function dailyBudget(samples: Sample[], weekPct: number, resetsAt: number, now = Date.now()): Budget {
+/** Start of the quota day that contains `now` (quota days end at the weekly reset time). */
+export function quotaDayStart(resetsAt: number, now = Date.now()): number {
+  const daysLeft = Math.max(1, Math.ceil((resetsAt - now) / DAY));
+  return resetsAt - daysLeft * DAY;
+}
+
+/**
+ * Today's share of what is left of the week. `fixedStartPct` is the weekly % at the start of today
+ * as first worked out on this machine: passing it keeps today's allowance from moving when the
+ * history changes later in the day (a restart, a reinstall, a late sample).
+ */
+export function dailyBudget(samples: Sample[], weekPct: number, resetsAt: number, now = Date.now(), fixedStartPct?: number): Budget {
   const daysLeft = Math.max(1, Math.ceil((resetsAt - now) / DAY));
   const todayEnds = resetsAt - (daysLeft - 1) * DAY;
   const todayStarts = todayEnds - DAY;
   const sorted = [...samples].sort((a, b) => a.t - b.t);
-  const usedToday = Math.min(weekPct, usedBetween(increments(sorted), todayStarts, now));
-  const startPct = Math.max(0, weekPct - usedToday);
+  const startPct =
+    fixedStartPct !== undefined
+      ? Math.min(fixedStartPct, weekPct)
+      : Math.max(0, weekPct - Math.min(weekPct, usedBetween(increments(sorted), todayStarts, now)));
+  const usedToday = weekPct - startPct;
   const allowance = (100 - startPct) / daysLeft;
   return {
     daysLeft,
@@ -88,11 +102,11 @@ export function dailyBudget(samples: Sample[], weekPct: number, resetsAt: number
 }
 
 /** The 7 quota days of the current weekly window, with what each used or may still use. */
-export function quotaDays(samples: Sample[], weekPct: number, resetsAt: number, now = Date.now()): QuotaDay[] {
+export function quotaDays(samples: Sample[], weekPct: number, resetsAt: number, now = Date.now(), fixedStartPct?: number): QuotaDay[] {
   const sorted = [...samples].sort((a, b) => a.t - b.t);
   const incs = increments(sorted);
   const first = sorted[0]?.t ?? now;
-  const budget = dailyBudget(sorted, weekPct, resetsAt, now);
+  const budget = dailyBudget(sorted, weekPct, resetsAt, now, fixedStartPct);
   const days: QuotaDay[] = [];
   for (let i = 7; i >= 1; i--) {
     const start = resetsAt - i * DAY;
@@ -130,6 +144,35 @@ export class UsageHistory {
 
   samples(key: string): Sample[] {
     return this.read()[key] ?? [];
+  }
+
+  /**
+   * The weekly % at the start of the quota day beginning at `dayStart`, fixed the first time it is
+   * worked out on this machine (`compute`) and reused for the rest of that day.
+   */
+  dayStartPct(key: string, dayStart: number, compute: () => number): number {
+    const file = path.join(path.dirname(this.file), 'quota-days.json');
+    let data: Record<string, { dayStart: number; startPct: number }> = {};
+    try {
+      data = JSON.parse(fs.readFileSync(file, 'utf8')) ?? {};
+    } catch {
+      // first time
+    }
+    const saved = data[key];
+    if (saved && saved.dayStart === dayStart) {
+      return saved.startPct;
+    }
+    const startPct = compute();
+    data[key] = { dayStart, startPct };
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(data));
+      fs.renameSync(tmp, file);
+    } catch {
+      // best effort: without it the allowance is still computed, just not pinned
+    }
+    return startPct;
   }
 
   record(key: string, usage: AccountUsage): void {

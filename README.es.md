@@ -4,6 +4,8 @@
 
 **Elige, por ventana de VS Code, con cuál de tus cuentas trabaja Claude Code, y reparte tu cuota semanal por día.**
 
+> La interfaz está en inglés y español: el ajuste `relevo.language` la elige (por defecto sigue el idioma de VS Code).
+
 > Relevo es una extensión **no oficial**, de la comunidad. No está hecha, respaldada ni revisada por Anthropic. "Claude" y "Claude Code" son marcas de Anthropic, PBC, y aquí se mencionan solo para indicar con qué funciona.
 
 Relevo acompaña a la extensión oficial [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code). Sirve si tienes más de una cuenta propia de Claude (por ejemplo, personal y del trabajo) y quieres que cada ventana use la que corresponde.
@@ -42,7 +44,7 @@ Relevo acompaña a la extensión oficial [Claude Code](https://marketplace.visua
 Desde el Marketplace (busca «Relevo»), o con el `.vsix` de la [página de releases](https://github.com/Shirtep/relevo/releases):
 
 ```bash
-code --install-extension relevo-0.1.0.vsix
+code --install-extension relevo-0.2.0.vsix
 ```
 
 **Remote-SSH / WSL / contenedores:** instala Relevo **en el mismo lado que Claude Code** (en una ventana remota: vista de Extensiones → *Install in SSH: …*, o *Install from VSIX…* desde esa ventana). Cada equipo tiene sus propias sesiones: una cuenta nueva se inicia una vez en cada uno.
@@ -64,6 +66,11 @@ code --install-extension relevo-0.1.0.vsix
 | `relevo.sharedFolders` | `["projects"]` | Carpetas de las demás cuentas que se enlazan a las de la primera. Puedes sumar `skills`, `agents`, `commands`. |
 | `relevo.refreshIntervalMinutes` | `1` | Cada cuánto se relee el % que guarda Claude Code. |
 | `relevo.statusBarUsage` | `active` | `active` u `off`. |
+| `relevo.language` | `auto` | `auto` (sigue a VS Code), `en` o `es`. |
+
+## Reportar un problema
+
+Ejecuta **Relevo: Reportar un problema** (también está en la lista de cuentas y en el tooltip del uso). Abre un reporte con las versiones, el estado de la ventana y el registro reciente; escribe arriba qué pasó y luego guárdalo o cópialo y envíalo. Los correos, nombres de usuario y de equipo y las rutas de carpetas se ocultan antes de mostrarlo, y puedes revisar todo antes de compartirlo.
 
 ## Límites conocidos
 

@@ -1,0 +1,23 @@
+{
+  "description": "Elige, por ventana de VS Code, con cuál de tus cuentas trabaja Claude Code, y reparte tu cuota semanal por día. Extensión no oficial, sin relación con Anthropic.",
+  "command.switch": "Cambiar cuenta de esta ventana",
+  "command.addAccount": "Añadir cuenta…",
+  "command.removeAccount": "Quitar una cuenta de la lista…",
+  "command.showUsage": "Ver consumo",
+  "command.updateUsage": "Actualizar uso (ejecuta /usage de Claude Code)",
+  "command.setupProfiles": "Preparar perfiles (enlazar historial)",
+  "command.diagnostics": "Diagnóstico",
+  "command.reportProblem": "Reportar un problema",
+  "config.accounts": "Cuentas y sus carpetas de perfil. Vacío = la cuenta con la que ya usas Claude Code (perfil por defecto, `~/.claude`) más los perfiles `~/.claude-<nombre>` que ya existan con una sesión. Se gestiona desde la barra de estado (**Añadir cuenta…**). `configDir` vacío = perfil por defecto. La primera cuenta es la dueña del historial compartido. Es una sola lista para el equipo local y los remotos; cada equipo resuelve `~` en su propia carpeta de usuario.",
+  "config.accounts.id": "Identificador corto.",
+  "config.accounts.label": "Nombre a mostrar; por defecto, la parte del email antes de la @.",
+  "config.accounts.configDir": "Carpeta de perfil (admite ~). Vacío = perfil por defecto.",
+  "config.defaultAccount": "Id de la cuenta que usa una ventana en la que todavía no elegiste ninguna (A = la cuenta por defecto de Claude Code).",
+  "config.sharedFolders": "Carpetas de las demás cuentas que se enlazan a las de la primera. `projects` comparte el historial (para `/resume`). Otras que puedes sumar: `skills`, `agents`, `commands`, `file-history`.",
+  "config.refreshIntervalMinutes": "Cada cuántos minutos se relee el % de uso que guarda Claude Code (no hace peticiones de red).",
+  "config.statusBarUsage": "Qué mostrar del uso en la barra de estado.",
+  "config.statusBarUsage.active": "El uso de la cuenta de esta ventana",
+  "config.statusBarUsage.off": "No mostrar el uso",
+  "config.language.auto": "Seguir el idioma de VS Code",
+  "config.language": "Idioma de la barra de estado, los mensajes y el panel de Relevo. Los nombres de los comandos siguen el idioma de VS Code."
+}

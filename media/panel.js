@@ -24,6 +24,7 @@
       app.classList.add('loading');
     } else if (msg.type === 'data') {
       data = msg.data;
+      setLocale(data.lang || 'en');
       app.classList.remove('loading');
       app.classList.add('has-data');
       render();
@@ -33,6 +34,15 @@
   vscode.postMessage({ type: 'ready' });
 
   // ---------- helpers ----------
+
+  /**
+   * English is the source text; the extension sends the translation table for the UI language.
+   * @param {string} message @param {...(string|number)} args
+   */
+  function T(message, ...args) {
+    const template = (data && data.l10n && data.l10n[message]) || message;
+    return template.replace(/\{(\d+)\}/g, (_, i) => String(args[Number(i)] ?? ''));
+  }
 
   /** @param {string} tag @param {Record<string, any>} [attrs] @param {...any} children */
   function h(tag, attrs, ...children) {
@@ -57,30 +67,39 @@
     return el;
   }
 
-  const full = new Intl.NumberFormat('es');
   const pctFmt = (/** @type {number} */ n) => `${n >= 10 ? Math.round(n) : Math.round(n * 10) / 10}%`;
-  const dayFmt = new Intl.DateTimeFormat('es', { weekday: 'short', day: 'numeric' });
-  const timeFmt = new Intl.DateTimeFormat('es', { hour: '2-digit', minute: '2-digit' });
-  const dateTimeFmt = new Intl.DateTimeFormat('es', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  let full = new Intl.NumberFormat('en');
+  let dayFmt = new Intl.DateTimeFormat('en', { weekday: 'short', day: 'numeric' });
+  let timeFmt = new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit' });
+  let dateTimeFmt = new Intl.DateTimeFormat('en', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  /** @param {string} locale */
+  function setLocale(locale) {
+    full = new Intl.NumberFormat(locale);
+    dayFmt = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric' });
+    timeFmt = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });
+    dateTimeFmt = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    document.documentElement.lang = locale;
+  }
 
   /** @param {number} ms */
   function when(ms) {
     const d = new Date(ms);
     const today = new Date();
-    if (d.toDateString() === today.toDateString()) return `hoy ${timeFmt.format(d)}`;
+    if (d.toDateString() === today.toDateString()) return T('today {0}', timeFmt.format(d));
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
-    if (d.toDateString() === tomorrow.toDateString()) return `mañana ${timeFmt.format(d)}`;
+    if (d.toDateString() === tomorrow.toDateString()) return T('tomorrow {0}', timeFmt.format(d));
     return dateTimeFmt.format(d);
   }
 
   /** @param {number} ms */
   function ago(ms) {
     const min = Math.round((Date.now() - ms) / 60000);
-    if (min < 1) return 'hace un momento';
-    if (min < 60) return `hace ${min} min`;
+    if (min < 1) return T('just now');
+    if (min < 60) return T('{0} min ago', min);
     const hours = Math.round(min / 60);
-    return hours < 48 ? `hace ${hours} h` : `hace ${Math.round(hours / 24)} días`;
+    return hours < 48 ? T('{0} h ago', hours) : T('{0} days ago', Math.round(hours / 24));
   }
 
   /** @param {{pct:number, resetsAt?:number}|undefined} w */
@@ -118,8 +137,8 @@
     return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ''}`;
   }
 
-  const EFFORTS = /** @type {Record<string,string>} */ ({ low: 'bajo', medium: 'medio', high: 'alto', xhigh: 'muy alto', max: 'máximo' });
-  const effortName = (/** @type {string} */ e) => (e ? EFFORTS[e] || e : 'sin dato');
+  const EFFORTS = /** @type {Record<string,string>} */ ({ low: 'low', medium: 'medium', high: 'high', xhigh: 'extra high', max: 'max' });
+  const effortName = (/** @type {string} */ e) => (e ? T(EFFORTS[e] || e) : T('unknown'));
   const EFFORT_ORDER = ['max', 'xhigh', 'high', 'medium', 'low', ''];
 
   /** Short unique names: basename, or parent/basename when two projects share a basename. */
@@ -190,14 +209,24 @@
         h(
           'div',
           {},
-          h('h1', {}, 'Consumo de Claude'),
-          h('p', { class: 'sub' }, `Cuenta ${active.label}${active.email ? ` (${active.email})` : ''} · actualizado ${timeFmt.format(new Date(data.generatedAt))}`),
+          h('h1', {}, T('Claude usage')),
+          h(
+            'p',
+            { class: 'sub' },
+            active
+              ? T('Account {0}{1} · updated {2}', active.label, active.email ? ` (${active.email})` : '', timeFmt.format(new Date(data.generatedAt)))
+              : '',
+          ),
         ),
-        h('div', { class: 'controls' }, h('button', { title: 'Claude Code consulta el uso de la cuenta (su comando /usage)', onclick: () => vscode.postMessage({ type: 'update' }) }, 'Actualizar uso')),
+        h(
+          'div',
+          { class: 'controls' },
+          h('button', { title: T("Claude Code checks the account's usage (its /usage command)"), onclick: () => vscode.postMessage({ type: 'update' }) }, T('Refresh usage')),
+        ),
       ),
     );
     if (data.error) {
-      app.append(h('p', { class: 'empty' }, `No se pudo leer el historial: ${data.error}`));
+      app.append(h('p', { class: 'empty' }, T('Could not read the history: {0}', data.error)));
       return;
     }
     app.append(renderToday(active));
@@ -206,15 +235,19 @@
         h(
           'section',
           { class: 'card' },
-          h('h2', {}, 'Cuota semanal por día'),
-          h('div', { class: 'legend' }, legendItem(accountColor(data.quota.account), 'Usado'), legendItem('wash', 'Disponible para seguir el ritmo')),
+          h('h2', {}, T('Weekly quota per day')),
+          h('div', { class: 'legend' }, legendItem(accountColor(data.quota.account), T('Used')), legendItem('wash', T('Available to stay on pace'))),
           h('div', { class: 'chart', id: 'chart-days' }),
           h(
             'p',
             { class: 'note' },
-            'Medido con el % de la cuenta que guarda Claude Code, así que incluye lo que gastes en cualquier equipo o en claude.ai. ' +
-              `Cada día termina a la hora del reinicio semanal (${timeFmt.format(new Date(data.quota.budget.resetsAt))}). ` +
-              (data.quota.recordedSince ? `Registrado desde ${when(data.quota.recordedSince)}, cada vez que Claude Code actualiza ese dato en este equipo.` : 'Aún no hay registro.'),
+            T("Measured from the account's usage as stored by Claude Code, so it includes use from any machine or claude.ai.") +
+              ' ' +
+              T('Each day ends at the weekly reset time ({0}).', timeFmt.format(new Date(data.quota.budget.resetsAt))) +
+              ' ' +
+              (data.quota.recordedSince
+                ? T('Recorded since {0}, each time Claude Code updates it on this machine.', when(data.quota.recordedSince))
+                : T('No recording yet.')),
           ),
         ),
       );
@@ -223,33 +256,33 @@
     const filter = h(
       'select',
       {
-        'aria-label': 'Cuenta',
+        'aria-label': T('Account'),
         onchange: (/** @type {Event} */ e) => {
           state = { ...state, account: /** @type {HTMLSelectElement} */ (e.target).value };
           vscode.setState(state);
           render();
         },
       },
-      data.accounts.map((/** @type {any} */ a) => h('option', { value: a.id, selected: a.id === selectedAccount() }, `${a.label}${a.active ? ' (esta ventana)' : ''}`)),
-      h('option', { value: ALL, selected: selectedAccount() === ALL }, 'Todas las cuentas'),
+      data.accounts.map((/** @type {any} */ a) => h('option', { value: a.id, selected: a.id === selectedAccount() }, a.active ? T('{0} (this window)', a.label) : a.label)),
+      h('option', { value: ALL, selected: selectedAccount() === ALL }, T('All accounts')),
     );
-    app.append(
-      h('div', { class: 'section-head' }, h('h2', {}, `En este equipo · últimos ${RECORDS_DAYS} días`), h('label', { class: 'controls' }, 'Cuenta', filter)),
-    );
+    app.append(h('div', { class: 'section-head' }, h('h2', {}, T('On this machine · last {0} days', RECORDS_DAYS)), h('label', { class: 'controls' }, T('Account'), filter)));
     const recs = records();
     if (recs.length === 0) {
-      app.append(h('p', { class: 'empty' }, 'Sin actividad de esa cuenta en este equipo.'));
+      app.append(h('p', { class: 'empty' }, T('No activity for that account on this machine.')));
       return;
     }
     app.append(
       renderModels(recs),
-      h('section', { class: 'card' }, h('h2', {}, 'Proyectos'), h('div', { class: 'chart', id: 'chart-projects' })),
+      h('section', { class: 'card' }, h('h2', {}, T('Projects')), h('div', { class: 'chart', id: 'chart-projects' })),
       h(
         'p',
         { class: 'note' },
-        `${data.files} archivos leídos en ${data.ms} ms. «Uso relativo» pondera los tokens con el precio de cada modelo en la API ` +
-          '(lectura de caché a 0,1×, escritura a 1,25–2×): sirve para comparar, no es un costo. ' +
-          'Esta parte solo ve el historial de este equipo; lo que hagas en otro equipo no aparece aquí.',
+        T('{0} files read in {1} ms.', data.files, data.ms) +
+          ' ' +
+          T('"Relative use" weighs tokens with each model\'s API price (cache reads at 0.1×, writes at 1.25–2×): it is for comparing, not a cost.') +
+          ' ' +
+          T("This section only sees this machine's history; use on other machines does not show here."),
       ),
     );
     renderCharts();
@@ -269,45 +302,47 @@
     const q = data.quota;
     const tiles = h('section', { class: 'tiles' });
 
-    const usageCard = h('div', { class: 'card tile' }, h('div', { class: 'tile-head' }, h('span', { class: 'tile-name' }, 'Límites de la cuenta')));
-    usageCard.append(meter('5 horas', effectivePct(u && u.fiveHour), u && u.fiveHour && u.fiveHour.resetsAt, color));
-    usageCard.append(meter('Semanal', effectivePct(u && u.sevenDay), u && u.sevenDay && u.sevenDay.resetsAt, color));
+    const usageCard = h('div', { class: 'card tile' }, h('div', { class: 'tile-head' }, h('span', { class: 'tile-name' }, T('Account limits'))));
+    usageCard.append(meter(T('5 hours'), effectivePct(u && u.fiveHour), u && u.fiveHour && u.fiveHour.resetsAt, color));
+    usageCard.append(meter(T('Weekly'), effectivePct(u && u.sevenDay), u && u.sevenDay && u.sevenDay.resetsAt, color));
     let source;
-    if (!u || u.source === 'none') source = 'Claude Code todavía no guardó el uso de esta cuenta. Pulsa «Actualizar uso».';
+    if (!u || u.source === 'none') source = T('Claude Code has not stored this account\'s usage yet. Click "Refresh usage".');
     else
       source =
-        `Dato que guardó Claude Code ${ago(u.fetchedAt)}.` +
-        (Date.now() - u.fetchedAt > 30 * 60000 ? ' Pulsa «Actualizar uso» para pedirle a Claude Code uno nuevo.' : '');
+        T('Figures Claude Code stored {0}.', ago(u.fetchedAt)) +
+        (Date.now() - u.fetchedAt > 30 * 60000 ? ' ' + T('Click "Refresh usage" to ask Claude Code for new ones.') : '');
     usageCard.append(h('div', { class: 'tile-source' }, source));
     tiles.append(usageCard);
 
     if (q) {
       const b = q.budget;
       const over = b.leftToday < 0;
-      const card = h('div', { class: 'card tile' }, h('div', { class: 'tile-head' }, h('span', { class: 'tile-name' }, 'Presupuesto de hoy')));
+      const card = h('div', { class: 'card tile' }, h('div', { class: 'tile-head' }, h('span', { class: 'tile-name' }, T("Today's budget"))));
       card.append(
         h(
           'div',
           { class: 'hero' },
           h('strong', {}, over ? `+${pctFmt(-b.leftToday)}` : pctFmt(b.leftToday)),
-          h('span', {}, over ? 'por encima de lo de hoy' : `libre de ~${pctFmt(b.allowance)} para hoy`),
+          h('span', {}, over ? T("over today's share") : T('free of ~{0} for today', pctFmt(b.allowance))),
         ),
       );
-      const bar = h('div', { class: 'meter', role: 'meter', 'aria-label': 'Usado hoy', 'aria-valuemin': 0, 'aria-valuemax': b.allowance, 'aria-valuenow': b.usedToday });
+      const bar = h('div', { class: 'meter', role: 'meter', 'aria-label': T('Used today'), 'aria-valuemin': 0, 'aria-valuemax': b.allowance, 'aria-valuenow': b.usedToday });
       const fill = h('div', { class: 'meter-fill' });
       const fillColor = over ? 'var(--warning)' : color;
       fill.style.width = `${Math.min(100, (b.usedToday / Math.max(b.allowance, 0.01)) * 100)}%`;
       fill.style.background = fillColor;
       bar.style.background = `color-mix(in srgb, ${fillColor} 18%, transparent)`;
       bar.append(fill);
+      const days = b.daysLeft === 1 ? T('the last day') : T('{0} days', b.daysLeft);
       card.append(
-        h('div', { class: 'meter-row' }, h('span', { class: 'meter-label' }, 'Hoy'), bar, h('span', { class: 'meter-value' }, `${over ? '⚠ ' : ''}${pctFmt(b.usedToday)}`)),
+        h('div', { class: 'meter-row' }, h('span', { class: 'meter-label' }, T('Today')), bar, h('span', { class: 'meter-value' }, `${over ? '⚠ ' : ''}${pctFmt(b.usedToday)}`)),
         h(
           'div',
           { class: 'tile-source' },
-          `${pctFmt(100 - b.startPct)} de la cuota libre para ${b.daysLeft === 1 ? 'el último día' : `${b.daysLeft} días`} (reinicio ${when(b.resetsAt)}). ` +
-            'Si un día usas menos, los siguientes tienen más; si usas más, tienen menos.' +
-            (b.partial ? ' El registro empezó a mitad de este día: lo usado antes no cuenta.' : ''),
+          T('{0} of the quota free for {1} (reset {2}).', pctFmt(100 - b.startPct), days, when(b.resetsAt)) +
+            ' ' +
+            T('Use less one day and the next ones get more; use more and they get less.') +
+            (b.partial ? ' ' + T('Recording started partway through this day: earlier use is not counted.') : ''),
         ),
       );
       tiles.append(card);
@@ -328,7 +363,7 @@
     const value = pct === undefined ? '—' : `${pct >= 75 ? '⚠ ' : ''}${Math.round(pct)}%`;
     row.append(h('span', { class: 'meter-label' }, label), bar, h('span', { class: 'meter-value' }, value));
     if (resetsAt && pct !== undefined && resetsAt > Date.now()) {
-      row.append(h('span', { class: 'meter-reset' }, `reinicia ${when(resetsAt)}`));
+      row.append(h('span', { class: 'meter-reset' }, T('resets {0}', when(resetsAt))));
     }
     return row;
   }
@@ -349,11 +384,11 @@
     // Only meaningful for the account whose quota was measured.
     const quotaShare = q && q.used7d > 0 && selectedAccount() === q.account ? q.used7d : undefined;
     const color = selectedAccount() === ALL ? 'var(--ink-2)' : accountColor(selectedAccount());
-    const head = ['Modelo', 'Esfuerzo', 'Respuestas', 'Uso relativo', ...(quotaShare !== undefined ? ['≈ cuota semanal'] : [])];
+    const head = [T('Model'), T('Effort'), T('Responses'), T('Relative use'), ...(quotaShare !== undefined ? [T('≈ weekly quota')] : [])];
     const table = h(
       'table',
       {},
-      h('thead', {}, h('tr', {}, head.map((t) => h('th', { scope: 'col' }, t)))),
+      h('thead', {}, h('tr', {}, head.map((x) => h('th', { scope: 'col' }, x)))),
       h(
         'tbody',
         {},
@@ -379,14 +414,15 @@
     return h(
       'section',
       { class: 'card' },
-      h('h2', {}, 'Modelos y esfuerzo'),
+      h('h2', {}, T('Models and effort')),
       h('div', { class: 'table-wrap' }, table),
       quotaShare !== undefined
         ? h(
             'p',
             { class: 'note' },
-            `«≈ cuota semanal» reparte el ${pctFmt(quotaShare)} que la cuenta gastó en estos 7 días según el uso relativo de cada fila. ` +
-              'Supone que todo salió de este equipo: si también usas la cuenta en otro, aquí sobreestima.',
+            T('"≈ weekly quota" splits the {0} the account used in these 7 days by each row\'s relative use.', pctFmt(quotaShare)) +
+              ' ' +
+              T('It assumes it all came from this machine: if you also use the account elsewhere, it overestimates here.'),
           )
         : null,
     );
@@ -431,14 +467,14 @@
     const slot = pw / days.length;
     const barW = Math.min(24, slot * 0.6);
 
-    const svg = s('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Cuota semanal usada y disponible por día' });
+    const svg = s('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': T('Weekly quota used and available per day') });
     for (let v = 0; v <= top + 1e-9; v += step) {
       const line = s('line', { x1: ml, x2: W - mr, y1: y(v), y2: y(v), 'stroke-width': 1 });
       line.style.stroke = v === 0 ? 'var(--axis)' : 'var(--grid)';
       svg.append(line);
-      const t = s('text', { x: ml - 6, y: y(v) + 4, 'text-anchor': 'end' });
-      t.textContent = `${v}%`;
-      svg.append(t);
+      const tick = s('text', { x: ml - 6, y: y(v) + 4, 'text-anchor': 'end' });
+      tick.textContent = `${v}%`;
+      svg.append(tick);
     }
     days.forEach((d, i) => {
       const cx = ml + slot * i + slot / 2;
@@ -466,18 +502,22 @@
       }
       if (d.state === 'today') {
         const cap = s('text', { class: 'cap', x: cx, y: y(Math.max(used, used + free)) - 6, 'text-anchor': 'middle' });
-        cap.textContent = `${pctFmt(used)} de ${pctFmt(d.allowance ?? 0)}`;
+        cap.textContent = T('{0} of {1}', pctFmt(used), pctFmt(d.allowance ?? 0));
         svg.append(cap);
       }
       const label = s('text', { class: d.state === 'today' ? 'today' : '', x: cx, y: H - 8, 'text-anchor': 'middle' });
-      label.textContent = d.state === 'today' ? 'hoy' : dayFmt.format(new Date(d.start));
+      label.textContent = d.state === 'today' ? T('today') : dayFmt.format(new Date(d.start));
       svg.append(label);
       hoverable(hit, () => {
         const rows = [];
         if (d.state !== 'future') {
-          rows.push({ label: d.used === undefined ? 'sin registro' : d.partial ? 'usado (registro parcial)' : 'usado', color, value: d.used === undefined ? '—' : pctFmt(used) });
+          rows.push({
+            label: d.used === undefined ? T('not recorded') : d.partial ? T('used (partial recording)') : T('used'),
+            color,
+            value: d.used === undefined ? '—' : pctFmt(used),
+          });
         }
-        if (d.state !== 'past') rows.push({ label: d.state === 'today' ? 'te queda hoy' : 'disponible ese día', color: 'var(--axis)', value: pctFmt(free) });
+        if (d.state !== 'past') rows.push({ label: d.state === 'today' ? T('left today') : T('available that day'), color: 'var(--axis)', value: pctFmt(free) });
         return [`${dateTimeFmt.format(new Date(d.start))} → ${timeFmt.format(new Date(d.end))}`, rows];
       });
     });
@@ -504,7 +544,7 @@
     if (rows.length > TOP_PROJECTS + 1) {
       const rest = rows.slice(TOP_PROJECTS);
       const values = series.map((_, k) => rest.reduce((a, r) => a + r.values[k], 0));
-      rows = [...rows.slice(0, TOP_PROJECTS), { project: `Otros (${rest.length})`, values, total: values.reduce((a, b) => a + b, 0), other: true }];
+      rows = [...rows.slice(0, TOP_PROJECTS), { project: T('Others ({0})', rest.length), values, total: values.reduce((a, b) => a + b, 0), other: true }];
     }
     const names = projectNames(rows.map((r) => r.project));
     const max = Math.max(...rows.map((r) => r.total), 1e-9);
@@ -533,7 +573,7 @@
           .map((id, k) => ({ id, v: r.values[k] }))
           .filter((x) => x.v > 0)
           .map((x) => ({
-            label: x.id === UNKNOWN ? 'Sin identificar' : (data.accounts.find((/** @type {any} */ a) => a.id === x.id) || { label: x.id }).label,
+            label: x.id === UNKNOWN ? T('Unidentified') : (data.accounts.find((/** @type {any} */ a) => a.id === x.id) || { label: x.id }).label,
             color: accountColor(x.id),
             value: pctFmt((x.v / total) * 100),
           })),

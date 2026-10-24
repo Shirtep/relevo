@@ -105,7 +105,7 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
 
   const a = report.after ?? {};
-  const ok = report.before?.officialLockInProfileA && report.before.blockedWhileBusy && a.officialLockInProfileB && a.cliUsedProfileB && a.restartedHost && a.envIsProfileB && !report.error;
+  const ok = report.before?.officialLockInProfileA && report.before.blockedWhileBusy && a.officialLockInProfileB && a.cliUsedProfileB && a.restartedHost && a.envIsProfileB && a.reportOpened && a.reportHasLog && a.reportMasksHome && !report.error;
   await sleep(1500);
   fs.rmSync(work, { recursive: true, force: true });
   console.log(ok ? 'E2E OK: after the switch Claude Code runs on profile B' : 'E2E FAILED');

@@ -72,6 +72,13 @@ async function run() {
   r.cliUsedProfileB = await waitFor(() => fs.existsSync(path.join(cfg.profileB, '.claude.json')), 60_000);
   r.restartedHost = report.before?.pid !== undefined && report.before.pid !== process.pid;
   r.envIsProfileB = process.env.CLAUDE_CONFIG_DIR === cfg.profileB;
+  // The problem report opens as a document with the log, and without the user's home folder.
+  void vscode.commands.executeCommand('relevo.reportProblem'); // then waits on a notification nobody answers
+  const isReport = (d) => d.getText().startsWith('# Relevo problem report');
+  r.reportOpened = await waitFor(() => vscode.workspace.textDocuments.some(isReport), 15_000);
+  const reportText = vscode.workspace.textDocuments.find(isReport)?.getText() ?? '';
+  r.reportHasLog = /activated: Relevo/.test(reportText) && /switching A -> B/.test(reportText);
+  r.reportMasksHome = reportText.length > 0 && !reportText.toLowerCase().includes(require('os').homedir().toLowerCase());
   r.done = true;
   save();
 }

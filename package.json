@@ -1,8 +1,8 @@
 {
   "name": "relevo",
   "displayName": "Relevo",
-  "description": "Pick which of your Claude Code accounts each VS Code window uses, and spread your weekly quota across the days. Unofficial, not affiliated with Anthropic.",
-  "version": "0.1.0",
+  "description": "%description%",
+  "version": "0.2.0",
   "publisher": "a-shirtep",
   "author": {
     "name": "Shirtep"
@@ -84,37 +84,42 @@
     "commands": [
       {
         "command": "relevo.switch",
-        "title": "Cambiar cuenta de esta ventana",
+        "title": "%command.switch%",
         "category": "Relevo"
       },
       {
         "command": "relevo.addAccount",
-        "title": "Añadir cuenta…",
+        "title": "%command.addAccount%",
         "category": "Relevo"
       },
       {
         "command": "relevo.removeAccount",
-        "title": "Quitar una cuenta de la lista…",
+        "title": "%command.removeAccount%",
         "category": "Relevo"
       },
       {
         "command": "relevo.showUsage",
-        "title": "Ver consumo",
+        "title": "%command.showUsage%",
         "category": "Relevo"
       },
       {
         "command": "relevo.updateUsage",
-        "title": "Actualizar uso (ejecuta /usage de Claude Code)",
+        "title": "%command.updateUsage%",
         "category": "Relevo"
       },
       {
         "command": "relevo.setupProfiles",
-        "title": "Preparar perfiles (enlazar historial)",
+        "title": "%command.setupProfiles%",
         "category": "Relevo"
       },
       {
         "command": "relevo.diagnostics",
-        "title": "Diagnóstico",
+        "title": "%command.diagnostics%",
+        "category": "Relevo"
+      },
+      {
+        "command": "relevo.reportProblem",
+        "title": "%command.reportProblem%",
         "category": "Relevo"
       }
     ],
@@ -123,7 +128,7 @@
       "properties": {
         "relevo.accounts": {
           "type": "array",
-          "markdownDescription": "Cuentas disponibles. Vacío = la cuenta con la que ya usas Claude Code (perfil por defecto, `~/.claude`) más los perfiles `~/.claude-<nombre>` que ya existan con una sesión. Se gestiona desde la barra de estado (**Añadir cuenta…**). `configDir` vacío = perfil por defecto. La primera cuenta es la dueña del historial compartido. Es una sola lista para el equipo local y los remotos; cada equipo resuelve `~` en su propia carpeta de usuario.",
+          "markdownDescription": "%config.accounts%",
           "default": [],
           "items": {
             "type": "object",
@@ -133,15 +138,15 @@
             "properties": {
               "id": {
                 "type": "string",
-                "description": "Identificador corto (se muestra en la barra de estado)."
+                "description": "%config.accounts.id%"
               },
               "label": {
                 "type": "string",
-                "description": "Nombre a mostrar; por defecto, la parte del email antes de la @."
+                "description": "%config.accounts.label%"
               },
               "configDir": {
                 "type": "string",
-                "description": "Carpeta de perfil (admite ~). Vacío = perfil por defecto."
+                "description": "%config.accounts.configDir%"
               }
             }
           },
@@ -150,7 +155,7 @@
         "relevo.defaultAccount": {
           "type": "string",
           "default": "A",
-          "description": "Id de la cuenta que usa una ventana en la que todavía no elegiste ninguna (A = la cuenta por defecto de Claude Code).",
+          "description": "%config.defaultAccount%",
           "scope": "application"
         },
         "relevo.sharedFolders": {
@@ -161,14 +166,14 @@
           "default": [
             "projects"
           ],
-          "markdownDescription": "Carpetas de los demás perfiles que se enlazan a las de la primera cuenta. `projects` comparte el historial (para `/resume`). Otras útiles: `skills`, `agents`, `commands`, `file-history`.",
+          "markdownDescription": "%config.sharedFolders%",
           "scope": "application"
         },
         "relevo.refreshIntervalMinutes": {
           "type": "number",
           "default": 1,
           "minimum": 1,
-          "description": "Cada cuántos minutos se relee el % de uso que guarda Claude Code (no hace peticiones de red).",
+          "description": "%config.refreshIntervalMinutes%",
           "scope": "application"
         },
         "relevo.statusBarUsage": {
@@ -178,12 +183,28 @@
             "off"
           ],
           "enumDescriptions": [
-            "Mostrar el uso de la cuenta de esta ventana",
-            "No mostrar el uso"
+            "%config.statusBarUsage.active%",
+            "%config.statusBarUsage.off%"
           ],
           "default": "active",
           "scope": "application",
-          "description": "Qué mostrar del % de uso en la barra de estado (el último que guardó Claude Code para la cuenta de esta ventana)."
+          "description": "%config.statusBarUsage%"
+        },
+        "relevo.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "en",
+            "es"
+          ],
+          "default": "auto",
+          "scope": "application",
+          "enumDescriptions": [
+            "%config.language.auto%",
+            "English",
+            "Español"
+          ],
+          "description": "%config.language%"
         }
       }
     }

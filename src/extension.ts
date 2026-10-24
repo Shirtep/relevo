@@ -4,9 +4,11 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { Account, AccountConfig, baseConfigDirEnv, defaultAccountConfigs, newAccountConfig, resolveAccounts, samePath } from './accounts';
+import { language, resolveLanguage, setLanguage, t, translations } from './i18n';
 import { PanelData, UsagePanel } from './panel';
 import { alignCleanupPeriod, canCopySettings, copySettings, ensureSharedFolders, linkStatus } from './profiles';
-import { Budget, UsageHistory, dailyBudget, quotaDays, usedSince } from './history';
+import { Budget, Sample, UsageHistory, dailyBudget, quotaDayStart, quotaDays, usedSince } from './history';
+import { makeRedactor } from './report';
 import { workingSessions } from './sessions';
 import { scanTranscripts } from './transcripts';
 import { AccountUsage, UsageWindow, effectivePct, readAccountInfo, readUsage } from './usage';
@@ -20,6 +22,8 @@ const RESTART_HOSTS = 'workbench.action.restartExtensionHost';
 const SCAN_DAYS = 8;
 /** When this extension host process started; files older than that belong to a previous host. */
 const HOST_STARTED = Date.now() - process.uptime() * 1000;
+/** How many of the latest log lines go into a problem report. */
+const REPORT_LOG_LINES = 300;
 
 interface PendingSwitch {
   target: Account;
@@ -46,7 +50,6 @@ let usageItem: vscode.StatusBarItem;
 let updating = false;
 let timer: NodeJS.Timeout | undefined;
 
-
 function config(): vscode.WorkspaceConfiguration {
   return vscode.workspace.getConfiguration(SECTION);
 }
@@ -72,6 +75,10 @@ function folders(): string[] {
   return (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
 }
 
+function applyLanguage(): void {
+  setLanguage(resolveLanguage(config().get<string>('language'), vscode.env.language));
+}
+
 /**
  * Points this window's extension host at the account. Claude Code runs in the same process and
  * builds every new session's environment from process.env, so this is what selects the account;
@@ -84,7 +91,7 @@ function applyAccount(account: Account): void {
     process.env.CLAUDE_CONFIG_DIR = account.envValue;
   }
   const terminals = ctx.environmentVariableCollection;
-  terminals.description = `Claude: cuenta ${account.label}`;
+  terminals.description = t('Claude: account {0}', account.label);
   if (account.envValue === undefined || account.envValue === baseConfigDirEnv()) {
     terminals.clear();
   } else {
@@ -92,37 +99,62 @@ function applyAccount(account: Account): void {
   }
 }
 
+/** Runs a command handler, logging any failure and offering a problem report instead of failing silently. */
+function guard<A extends unknown[]>(name: string, fn: (...args: A) => unknown): (...args: A) => Promise<void> {
+  return async (...args: A) => {
+    try {
+      await fn(...args);
+    } catch (e) {
+      log.error(`${name} failed: ${e instanceof Error ? e.stack ?? e.message : e}`);
+      const report = t('Report a problem');
+      void vscode.window.showErrorMessage(t('Relevo: something went wrong ({0}).', e instanceof Error ? e.message : String(e)), report).then((c) => {
+        if (c === report) {
+          void reportProblem();
+        }
+      });
+    }
+  };
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   // Keep this block synchronous and first: Claude Code must see the account in process.env
   // before it activates, which is why the publisher id sorts ahead of "anthropic".
   ctx = context;
+  applyLanguage();
   accounts = loadAccounts();
   active = selectedAccount();
   applyAccount(active);
 
   log = vscode.window.createOutputChannel('Relevo', { log: true });
   context.subscriptions.push(log);
-  log.info(`ventana en cuenta ${active.id} (CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR ?? 'sin definir'})`);
+  const official = vscode.extensions.getExtension(OFFICIAL_ID);
+  log.info(
+    `activated: Relevo ${context.extension.packageJSON.version}, VS Code ${vscode.version}, ${process.platform} ${os.release()}, ` +
+      `remote=${vscode.env.remoteName ?? 'none'}, host=${kindLabel(context.extension.extensionKind)}, ` +
+      `Claude Code ${official?.packageJSON.version ?? 'missing'} (${official ? kindLabel(official.extensionKind) : '-'}, active=${official?.isActive ?? false})`,
+  );
+  log.info(`accounts: ${accounts.map((a) => `${a.id}${a === active ? '*' : ''}`).join(', ')}; window account ${active.id}; CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR ?? 'unset'}`);
   history = new UsageHistory(context.globalStorageUri.fsPath);
 
   accountItem = vscode.window.createStatusBarItem('relevo.account', vscode.StatusBarAlignment.Right, 101);
-  accountItem.name = 'Claude: cuenta';
+  accountItem.name = t('Claude: account');
   accountItem.command = 'relevo.switch';
   usageItem = vscode.window.createStatusBarItem('relevo.usage', vscode.StatusBarAlignment.Right, 100);
-  usageItem.name = 'Claude: % de uso';
+  usageItem.name = t('Claude: usage');
   // Clicking the usage asks Claude Code for fresh figures; the panel opens from the tooltip.
   usageItem.command = 'relevo.updateUsage';
   context.subscriptions.push(accountItem, usageItem);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('relevo.switch', (id?: unknown) => (typeof id === 'string' ? switchToId(id) : chooseAccount())),
-    vscode.commands.registerCommand('relevo.addAccount', addAccount),
-    vscode.commands.registerCommand('relevo.removeAccount', removeAccount),
-    vscode.commands.registerCommand('relevo.showUsage', showUsage),
-    vscode.commands.registerCommand('relevo.refreshUsage', refreshUsage),
-    vscode.commands.registerCommand('relevo.updateUsage', updateUsage),
-    vscode.commands.registerCommand('relevo.setupProfiles', setupProfilesCommand),
-    vscode.commands.registerCommand('relevo.diagnostics', diagnostics),
+    vscode.commands.registerCommand('relevo.switch', guard('switch', (id?: unknown) => (typeof id === 'string' ? switchToId(id) : chooseAccount()))),
+    vscode.commands.registerCommand('relevo.addAccount', guard('addAccount', addAccount)),
+    vscode.commands.registerCommand('relevo.removeAccount', guard('removeAccount', removeAccount)),
+    vscode.commands.registerCommand('relevo.showUsage', guard('showUsage', showUsage)),
+    vscode.commands.registerCommand('relevo.refreshUsage', guard('refreshUsage', refreshUsage)),
+    vscode.commands.registerCommand('relevo.updateUsage', guard('updateUsage', updateUsage)),
+    vscode.commands.registerCommand('relevo.setupProfiles', guard('setupProfiles', setupProfilesCommand)),
+    vscode.commands.registerCommand('relevo.diagnostics', guard('diagnostics', diagnostics)),
+    vscode.commands.registerCommand('relevo.reportProblem', guard('reportProblem', reportProblem)),
     vscode.workspace.onDidChangeConfiguration(onConfigChanged),
     vscode.window.onDidChangeWindowState((s) => {
       if (s.focused) {
@@ -147,8 +179,13 @@ export function deactivate(): void {}
 
 // ---------- problems & warnings ----------
 
+/** For logs and reports (always English). */
+function kindLabel(kind: vscode.ExtensionKind): string {
+  return kind === vscode.ExtensionKind.UI ? 'local' : vscode.env.remoteName ? `remote:${vscode.env.remoteName}` : 'local';
+}
+
 function kindName(kind: vscode.ExtensionKind): string {
-  return kind === vscode.ExtensionKind.UI ? 'el equipo local' : vscode.env.remoteName ? `el remoto (${vscode.env.remoteName})` : 'el equipo local';
+  return kind === vscode.ExtensionKind.UI || !vscode.env.remoteName ? t('the local machine') : t('the remote ({0})', vscode.env.remoteName);
 }
 
 /** Conditions that keep the per-window account from taking effect. */
@@ -156,17 +193,20 @@ function problems(): string[] {
   const list: string[] = [];
   const official = vscode.extensions.getExtension(OFFICIAL_ID);
   if (!official) {
-    list.push('No encontré la extensión Claude Code (anthropic.claude-code) en este host.');
+    list.push(t('The Claude Code extension (anthropic.claude-code) was not found on this host.'));
   } else if (official.extensionKind !== ctx.extension.extensionKind) {
     list.push(
-      `Claude Code corre en ${kindName(official.extensionKind)} y este switcher en ${kindName(ctx.extension.extensionKind)}: ` +
-        'instala el switcher en el mismo lado que Claude Code para que pueda elegir la cuenta.',
+      t(
+        'Claude Code runs on {0} and Relevo on {1}: install Relevo on the same side as Claude Code so it can choose the account.',
+        kindName(official.extensionKind),
+        kindName(ctx.extension.extensionKind),
+      ),
     );
   }
   const env = vscode.workspace.getConfiguration('claudeCode').get<unknown>('environmentVariables');
   const names = Array.isArray(env) ? env.map((e) => e?.name) : env && typeof env === 'object' ? Object.keys(env) : [];
   if (names.some((n) => typeof n === 'string' && n.toUpperCase() === 'CLAUDE_CONFIG_DIR')) {
-    list.push('claudeCode.environmentVariables define CLAUDE_CONFIG_DIR, y eso tiene prioridad sobre la cuenta de cada ventana.');
+    list.push(t('claudeCode.environmentVariables sets CLAUDE_CONFIG_DIR, which overrides the account of each window.'));
   }
   return list;
 }
@@ -216,23 +256,32 @@ function officialAccount(): Account | undefined {
 
 function warnOnStartup(): void {
   for (const p of problems()) {
-    void vscode.window.showWarningMessage(p, 'Diagnóstico').then((c) => c && diagnostics());
+    log.warn(`problem: ${p}`);
+    const report = t('Report a problem');
+    void vscode.window.showWarningMessage(p, report).then((c) => {
+        if (c === report) {
+          void reportProblem();
+        }
+      });
   }
   // Claude Code writes its lock shortly after activating; check a few times, warn once.
   let warned = false;
   for (const delay of [5_000, 15_000, 45_000]) {
-    const t = setTimeout(() => {
+    const timeout = setTimeout(() => {
       renderStatus();
       const owner = officialAccount();
       if (!warned && !switchingTo && owner && owner !== active) {
         warned = true;
-        log.warn(`Claude Code arrancó con la cuenta ${owner.id} aunque la ventana está en ${active.id}`);
+        log.warn(`Claude Code started with account ${owner.id} although the window is on ${active.id}`);
+        const restart = t('Restart extensions');
         void vscode.window
-          .showWarningMessage(`Claude Code arrancó con la cuenta ${owner.label} en esta ventana, no con ${active.label}.`, 'Reiniciar extensiones')
-          .then((c) => c && vscode.commands.executeCommand(RESTART_HOSTS));
+          .showWarningMessage(t('Claude Code started with the account {0} in this window, not {1}.', owner.label, active.label), restart)
+          .then((c) => c === restart && vscode.commands.executeCommand(RESTART_HOSTS));
+      } else if (owner) {
+        log.info(`Claude Code confirmed account ${owner.id} (after ${delay / 1000}s)`);
       }
     }, delay);
-    ctx.subscriptions.push({ dispose: () => clearTimeout(t) });
+    ctx.subscriptions.push({ dispose: () => clearTimeout(timeout) });
   }
 }
 
@@ -253,7 +302,7 @@ function formatReset(ms: number | undefined): string {
   }
   const d = new Date(ms);
   const sameDay = d.toDateString() === new Date().toDateString();
-  return d.toLocaleString('es', sameDay ? { hour: '2-digit', minute: '2-digit' } : { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(language(), sameDay ? { hour: '2-digit', minute: '2-digit' } : { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function historyKey(account: Account): string {
@@ -267,7 +316,17 @@ function currentBudget(): Budget | undefined {
   if (week === undefined || resetsAt === undefined || resetsAt <= Date.now()) {
     return undefined;
   }
-  return dailyBudget(history.samples(historyKey(active)), week, resetsAt);
+  const samples = history.samples(historyKey(active));
+  return dailyBudget(samples, week, resetsAt, Date.now(), pinnedStart(samples, week, resetsAt));
+}
+
+/** Today's starting %, worked out once per quota day on this machine and then kept. */
+function pinnedStart(samples: Sample[], week: number, resetsAt: number): number {
+  return history.dayStartPct(historyKey(active), quotaDayStart(resetsAt), () => {
+    const start = dailyBudget(samples, week, resetsAt).startPct;
+    log.info(`quota day ${new Date(quotaDayStart(resetsAt)).toISOString()}: start pinned at ${start}% for ${active.id}`);
+    return start;
+  });
 }
 
 function round1(n: number): string {
@@ -275,26 +334,28 @@ function round1(n: number): string {
 }
 
 function budgetText(b: Budget): string {
-  const days = b.daysLeft === 1 ? 'el último día' : `${b.daysLeft} días`;
+  const days = b.daysLeft === 1 ? t('the last day') : t('{0} days', b.daysLeft);
   const today =
     b.leftToday >= 0
-      ? `Hoy llevas ${round1(b.usedToday)}% y te quedan ~${round1(b.leftToday)}%.`
-      : `Hoy llevas ${round1(b.usedToday)}%, ~${round1(-b.leftToday)}% por encima: los días que quedan tendrán menos.`;
+      ? t('Today you have used {0}% and have ~{1}% left.', round1(b.usedToday), round1(b.leftToday))
+      : t('Today you have used {0}%, ~{1}% over: the remaining days will get less.', round1(b.usedToday), round1(-b.leftToday));
   return (
-    `Presupuesto de hoy: ~${round1(b.allowance)}% de la cuota semanal (${round1(100 - b.startPct)}% libre para ${days}, hasta el ${formatReset(b.resetsAt)}). ` +
+    t("Today's budget: ~{0}% of the weekly quota ({1}% free for {2}, until {3}).", round1(b.allowance), round1(100 - b.startPct), days, formatReset(b.resetsAt)) +
+    ' ' +
     today +
-    (b.partial ? ' El registro empezó a mitad de este día, así que lo usado antes no cuenta.' : '') +
-    ` El día de cuota termina ${formatReset(b.todayEnds)}.`
+    (b.partial ? ' ' + t('Recording started partway through this day, so earlier use is not counted.') : '') +
+    ' ' +
+    t('The quota day ends {0}.', formatReset(b.todayEnds))
   );
 }
 
-/** Claude Code's figures older than this are flagged, with a hint to refresh them with /usage. */
+/** Claude Code's figures older than this get a hint to refresh them. */
 const STALE_MS = 30 * 60_000;
 
-/** How old the figures are: minutes, then whole hours, and past a day just "+1 día". */
+/** How old the figures are: minutes, then whole hours, and past a day just "+1 day". */
 function ageText(u: AccountUsage): string {
   const min = Math.floor((Date.now() - u.fetchedAt) / 60_000);
-  return min < 60 ? `${Math.max(0, min)} min` : min < 24 * 60 ? `${Math.floor(min / 60)} h` : '+1 día';
+  return min < 60 ? t('{0} min', Math.max(0, min)) : min < 24 * 60 ? t('{0} h', Math.floor(min / 60)) : t('+1 day');
 }
 
 function isStale(u: AccountUsage | undefined): boolean {
@@ -303,45 +364,51 @@ function isStale(u: AccountUsage | undefined): boolean {
 
 function sourceText(u: AccountUsage | undefined): string {
   if (!u || u.source === 'none') {
-    return 'Claude Code todavía no guardó el uso de esta cuenta';
+    return t("Claude Code has not stored this account's usage yet");
   }
-  const age = ageText(u);
-  return `dato que guardó Claude Code ${age === '+1 día' ? 'hace más de un día' : `hace ${age}`}`;
+  return Date.now() - u.fetchedAt >= 86_400_000
+    ? t('figures Claude Code stored more than a day ago')
+    : t('figures Claude Code stored {0} ago', ageText(u));
 }
 
 function buildTooltip(): vscode.MarkdownString {
   const md = new vscode.MarkdownString(undefined, true);
   md.isTrusted = {
-    enabledCommands: ['relevo.switch', 'relevo.showUsage', 'relevo.updateUsage', 'relevo.diagnostics', RESTART_HOSTS],
+    enabledCommands: ['relevo.switch', 'relevo.showUsage', 'relevo.updateUsage', 'relevo.reportProblem', RESTART_HOSTS],
   };
   const info = readAccountInfo(active);
-  md.appendMarkdown(`**Esta ventana usa la cuenta ${escapeMd(active.label)}**${info.email ? ` (${escapeMd(info.email)})` : ''}\n\n`);
-  md.appendMarkdown('| | Uso | Se reinicia |\n|:--|--:|:--|\n');
-  md.appendMarkdown(`| 5 horas | ${pct(activeUsage?.fiveHour)} | ${escapeMd(formatReset(activeUsage?.fiveHour?.resetsAt))} |\n`);
-  md.appendMarkdown(`| Semanal | ${pct(activeUsage?.sevenDay)} | ${escapeMd(formatReset(activeUsage?.sevenDay?.resetsAt))} |\n\n`);
+  md.appendMarkdown(`**${escapeMd(t('This window uses the account {0}', active.label))}**${info.email ? ` (${escapeMd(info.email)})` : ''}\n\n`);
+  md.appendMarkdown(`| | ${t('Usage')} | ${t('Resets')} |\n|:--|--:|:--|\n`);
+  md.appendMarkdown(`| ${t('5 hours')} | ${pct(activeUsage?.fiveHour)} | ${escapeMd(formatReset(activeUsage?.fiveHour?.resetsAt))} |\n`);
+  md.appendMarkdown(`| ${t('Weekly')} | ${pct(activeUsage?.sevenDay)} | ${escapeMd(formatReset(activeUsage?.sevenDay?.resetsAt))} |\n\n`);
   const budget = currentBudget();
   if (budget) {
     md.appendMarkdown(`${budget.leftToday >= 0 ? '$(calendar)' : '$(warning)'} ${escapeMd(budgetText(budget))}\n\n`);
   }
-  md.appendMarkdown(`${escapeMd(`Fuente: ${sourceText(activeUsage)}.`)}`);
+  md.appendMarkdown(escapeMd(t('Source: {0}.', sourceText(activeUsage))));
   if (isStale(activeUsage)) {
-    md.appendMarkdown(' Haz clic en el uso para actualizarlo.');
+    md.appendMarkdown(' ' + escapeMd(t('Click the usage to refresh it.')));
   }
   md.appendMarkdown('\n\n');
   for (const p of problems()) {
     md.appendMarkdown(`$(warning) ${escapeMd(p)}\n\n`);
   }
   const owner = officialAccount();
+  const restartLink = `[${t('Restart extensions')}](command:${RESTART_HOSTS})`;
   if (stale) {
-    md.appendMarkdown(`$(warning) Cambió la configuración de cuentas. [Reiniciar extensiones](command:${RESTART_HOSTS}) para aplicarla.\n\n`);
+    md.appendMarkdown(`$(warning) ${escapeMd(t('The account settings changed.'))} ${restartLink}\n\n`);
   } else if (owner && owner !== active) {
-    md.appendMarkdown(`$(warning) Claude Code en esta ventana arrancó con la cuenta ${escapeMd(owner.label)}. [Reiniciar extensiones](command:${RESTART_HOSTS})\n\n`);
+    md.appendMarkdown(`$(warning) ${escapeMd(t('Claude Code in this window started with the account {0}.', owner.label))} ${restartLink}\n\n`);
   } else if (owner) {
-    md.appendMarkdown(`$(pass) Claude Code confirmó la cuenta ${escapeMd(owner.label)} en esta ventana.\n\n`);
+    md.appendMarkdown(`$(pass) ${escapeMd(t('Claude Code confirmed the account {0} in this window.', owner.label))}\n\n`);
   }
   md.appendMarkdown(
-    '[Cambiar cuenta](command:relevo.switch) · [Ver consumo](command:relevo.showUsage) · ' +
-      '[Actualizar uso](command:relevo.updateUsage) · [Diagnóstico](command:relevo.diagnostics)',
+    [
+      `[${t('Switch account')}](command:relevo.switch)`,
+      `[${t('Usage panel')}](command:relevo.showUsage)`,
+      `[${t('Refresh usage')}](command:relevo.updateUsage)`,
+      `[${t('Report a problem')}](command:relevo.reportProblem)`,
+    ].join(' · '),
   );
   return md;
 }
@@ -353,7 +420,7 @@ function renderStatus(): void {
   if (switchingTo) {
     accountItem.text = `$(sync~spin) Claude: ${active.label} → ${switchingTo.label}…`;
   } else if (pending) {
-    accountItem.text = `$(sync~spin) Claude: ${active.label} → ${pending.target.label} al terminar`;
+    accountItem.text = `$(sync~spin) Claude: ${active.label} → ${pending.target.label} ${t('when done')}`;
   } else {
     accountItem.text = `${warn ? '$(warning)' : '$(account)'} Claude: ${active.label}`;
   }
@@ -366,11 +433,11 @@ function renderStatus(): void {
     return;
   }
   const budget = currentBudget();
-  const today = budget ? ` · hoy ${round1(budget.usedToday)}/${round1(budget.allowance)}%` : '';
+  const today = budget ? ` · ${t('today')} ${round1(budget.usedToday)}/${round1(budget.allowance)}%` : '';
   // Always shown, so it's clear how fresh the figures are; a click refreshes them.
   const age = ` · $(history) ${activeUsage && activeUsage.source !== 'none' ? ageText(activeUsage) : '–'}`;
   const icon = updating ? '$(sync~spin)' : '$(graph-line)';
-  usageItem.text = `${icon} 5h ${pct(activeUsage?.fiveHour)} · sem ${pct(activeUsage?.sevenDay)}${today}${age}`;
+  usageItem.text = `${icon} 5h ${pct(activeUsage?.fiveHour)} · ${t('wk')} ${pct(activeUsage?.sevenDay)}${today}${age}`;
   usageItem.tooltip = tooltip;
   const worst = Math.max(effectivePct(activeUsage?.fiveHour) ?? 0, effectivePct(activeUsage?.sevenDay) ?? 0);
   const overToday = budget !== undefined && budget.leftToday < 0;
@@ -408,18 +475,36 @@ async function updateUsage(): Promise<void> {
     env.CLAUDE_CONFIG_DIR = active.envValue;
   }
   const before = activeUsage?.fetchedAt ?? 0;
+  const binary = claudeBinary();
+  const started = Date.now();
+  log.info(`refresh usage: running Claude Code /usage for ${active.id} (${path.basename(binary)})`);
   try {
     await new Promise<void>((resolve, reject) => {
-      cp.execFile(claudeBinary(), ['-p', '/usage'], { env, cwd: os.tmpdir(), timeout: 90_000, windowsHide: true }, (err) => (err ? reject(err) : resolve()));
+      cp.execFile(binary, ['-p', '/usage'], { env, cwd: os.tmpdir(), timeout: 90_000, windowsHide: true }, (err, _stdout, stderr) => {
+        if (err) {
+          reject(new Error(`${err.message}${stderr ? ` | ${String(stderr).trim().split('\n')[0]}` : ''}`));
+        } else {
+          resolve();
+        }
+      });
     });
+    log.info(`refresh usage: /usage finished in ${Date.now() - started} ms`);
   } catch (e) {
-    log.error(`/usage de Claude Code falló: ${e}`);
+    log.error(`refresh usage: /usage failed: ${e instanceof Error ? e.message : e}`);
   } finally {
     updating = false;
   }
   refreshUsage();
   if ((activeUsage?.fetchedAt ?? 0) <= before) {
-    void vscode.window.showWarningMessage('Claude Code no actualizó el uso. Prueba escribiendo /usage en Claude Code.', 'Diagnóstico').then((c) => c && diagnostics());
+    log.warn('refresh usage: Claude Code did not store new figures');
+    const report = t('Report a problem');
+    void vscode.window
+      .showWarningMessage(t('Claude Code did not update the usage. Try typing /usage in Claude Code.'), report)
+      .then((c) => {
+        if (c === report) {
+          void reportProblem();
+        }
+      });
   }
 }
 
@@ -429,7 +514,7 @@ function refreshUsage(): void {
     activeUsage = readUsage(active);
     history.record(historyKey(active), activeUsage);
   } catch (e) {
-    log.error(`uso de ${active.id}: ${e}`);
+    log.error(`reading usage of ${active.id}: ${e}`);
   }
   renderStatus();
 }
@@ -442,6 +527,12 @@ function restartTimer(): void {
 }
 
 function onConfigChanged(e: vscode.ConfigurationChangeEvent): void {
+  if (e.affectsConfiguration(`${SECTION}.language`)) {
+    applyLanguage();
+    accountItem.name = t('Claude: account');
+    usageItem.name = t('Claude: usage');
+    log.info(`language: ${language()}`);
+  }
   if (e.affectsConfiguration(SECTION)) {
     accounts = loadAccounts();
     const current = accounts.find((a) => a.id === active.id);
@@ -455,9 +546,11 @@ function onConfigChanged(e: vscode.ConfigurationChangeEvent): void {
     if (active.envValue !== applied) {
       stale = true;
       applyAccount(active);
+      log.info(`accounts setting changed: window now on ${active.id}, restart pending`);
+      const restart = t('Restart extensions');
       void vscode.window
-        .showInformationMessage(`La configuración de cuentas cambió. Reinicia las extensiones para que Claude Code use la cuenta ${active.label}.`, 'Reiniciar extensiones')
-        .then((c) => c && vscode.commands.executeCommand(RESTART_HOSTS));
+        .showInformationMessage(t('The account settings changed. Restart the extensions so Claude Code uses the account {0}.', active.label), restart)
+        .then((c) => c === restart && vscode.commands.executeCommand(RESTART_HOSTS));
     }
     restartTimer();
     refreshUsage();
@@ -474,35 +567,36 @@ type PickItem = vscode.QuickPickItem & { run?: () => unknown };
 async function chooseAccount(): Promise<void> {
   const items: PickItem[] = [];
   if (pending) {
-    items.push({ label: `$(close) Cancelar el cambio a ${pending.target.label}`, description: 'Claude sigue respondiendo', run: cancelPendingAndRender });
+    items.push({ label: `$(close) ${t('Cancel the switch to {0}', pending.target.label)}`, description: t('Claude is still answering'), run: cancelPendingAndRender });
     items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
   }
   for (const a of accounts) {
     const info = readAccountInfo(a);
     items.push({
       label: `${a === active ? '$(check) ' : ''}${a.label}`,
-      description: info.email ?? (info.loggedIn ? '' : 'sin sesión: Claude Code te pedirá iniciarla'),
-      detail: a === active ? 'En uso en esta ventana' : undefined,
+      description: info.email ?? (info.loggedIn ? '' : t('not signed in: Claude Code will ask you to sign in')),
+      detail: a === active ? t('In use in this window') : undefined,
       run: () => switchTo(a),
     });
   }
   items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
-  items.push({ label: '$(add) Añadir cuenta…', run: addAccount });
+  items.push({ label: `$(add) ${t('Add account…')}`, run: addAccount });
   if (accounts.some((a) => a !== primaryAccount() && a !== active)) {
-    items.push({ label: '$(trash) Quitar una cuenta de la lista…', run: removeAccount });
+    items.push({ label: `$(trash) ${t('Remove an account from the list…')}`, run: removeAccount });
   }
-  items.push({ label: '$(graph) Ver consumo', run: showUsage });
+  items.push({ label: `$(graph) ${t('Usage panel')}`, run: showUsage });
+  items.push({ label: `$(bug) ${t('Report a problem…')}`, run: reportProblem });
 
   const picked = await vscode.window.showQuickPick(items, {
-    title: 'Cuenta de Claude para esta ventana',
-    placeHolder: 'Al elegir otra cuenta se reinician las extensiones de esta ventana; tus archivos y terminales no se cierran',
+    title: t('Claude account for this window'),
+    placeHolder: t("Picking another account restarts this window's extensions; your files and terminals stay open"),
     matchOnDescription: true,
   });
   await picked?.run?.();
 }
 
 function switchToId(id: string): Promise<void> {
-  const target = accounts.find((a) => a.id === id);
+  const target = accounts.find((a) => a.id.toLowerCase() === id.toLowerCase());
   return target ? switchTo(target) : Promise.resolve();
 }
 
@@ -514,6 +608,7 @@ function cancelPending(): void {
 }
 
 function cancelPendingAndRender(): void {
+  log.info('pending switch cancelled');
   cancelPending();
   renderStatus();
 }
@@ -525,13 +620,16 @@ async function switchTo(target: Account): Promise<void> {
     return;
   }
   // Restarting the extension host ends the Claude process mid-answer, so never do it then.
-  if (workingSessions(active, folders()).length > 0) {
+  const working = workingSessions(active, folders());
+  if (working.length > 0) {
+    log.info(`switch to ${target.id} held: ${working.length} session(s) working (${working.map((s) => s.status).join(', ')})`);
+    const later = t('Switch when it finishes');
     const choice = await vscode.window.showWarningMessage(
-      `Claude está respondiendo en esta ventana. Si cambias a ${target.label} ahora, se cortaría la respuesta.`,
-      'Cambiar cuando termine',
-      'Cancelar',
+      t('Claude is answering in this window. Switching to {0} now would cut the answer short.', target.label),
+      later,
+      t('Cancel'),
     );
-    if (choice === 'Cambiar cuando termine') {
+    if (choice === later) {
       waitForIdle(target);
     }
     return;
@@ -541,6 +639,7 @@ async function switchTo(target: Account): Promise<void> {
 
 function waitForIdle(target: Account): void {
   cancelPending();
+  log.info(`waiting for Claude to finish before switching to ${target.id}`);
   const entry: PendingSwitch = {
     target,
     idleTicks: 0,
@@ -564,7 +663,7 @@ async function performSwitch(target: Account): Promise<void> {
   }
   switchingTo = target;
   renderStatus();
-  log.info(`cambiando de ${active.id} a ${target.id}; se reinician las extensiones`);
+  log.info(`switching ${active.id} -> ${target.id}; restarting the extension host`);
   await ctx.workspaceState.update(STATE_KEY, target.id);
   await ctx.workspaceState.update(SWITCHED_KEY, { to: target.id, at: Date.now() });
   // Restart only after the command that asked for it (a status bar click, the picker) has returned.
@@ -575,11 +674,12 @@ async function performSwitch(target: Account): Promise<void> {
       if ((e as Error)?.name === 'Canceled' || /Canceled/.test(String(e))) {
         return;
       }
-      log.error(`no se pudo reiniciar las extensiones: ${e}`);
+      log.error(`could not restart the extension host: ${e}`);
       switchingTo = undefined;
+      const reload = t('Reload window');
       void vscode.window
-        .showErrorMessage('No se pudo reiniciar las extensiones. Recarga la ventana para usar la otra cuenta.', 'Recargar ventana')
-        .then((c) => c && vscode.commands.executeCommand('workbench.action.reloadWindow'));
+        .showErrorMessage(t('Could not restart the extensions. Reload the window to use the other account.'), reload)
+        .then((c) => c === reload && vscode.commands.executeCommand('workbench.action.reloadWindow'));
       renderStatus();
     });
   }, 100);
@@ -595,17 +695,22 @@ function announceSwitch(): void {
   if (mark.to !== active.id || Date.now() - mark.at > 120_000) {
     return;
   }
-  if (readAccountInfo(active).loggedIn) {
-    vscode.window.setStatusBarMessage(`$(check) Claude: ahora usas la cuenta ${active.label}`, 6000);
+  const signedIn = readAccountInfo(active).loggedIn;
+  log.info(`switch to ${active.id} completed in ${Date.now() - mark.at} ms; signed in: ${signedIn}`);
+  if (signedIn) {
+    vscode.window.setStatusBarMessage(`$(check) ${t('Claude: now using the account {0}', active.label)}`, 6000);
     return;
   }
+  const open = t('Open Claude');
   void vscode.window
     .showInformationMessage(
-      `La cuenta «${active.label}» todavía no tiene sesión. Claude Code te mostrará su formulario de inicio de sesión: abre el enlace, autoriza con esa cuenta de claude.ai y pega aquí el código si te lo pide. ` +
-        'Si tu navegador tiene abierta otra cuenta, usa una ventana de incógnito.',
-      'Abrir Claude',
+      t(
+        'The account "{0}" is not signed in yet. Claude Code will show its sign-in form: open the link, authorize with that claude.ai account and paste the code here if asked. If your browser is signed in to another account, use a private window.',
+        active.label,
+      ),
+      open,
     )
-    .then((c) => c && vscode.commands.executeCommand('claude-vscode.editor.open'));
+    .then((c) => c === open && vscode.commands.executeCommand('claude-vscode.editor.open'));
 }
 
 // ---------- adding and removing accounts ----------
@@ -618,9 +723,9 @@ function configuredAccounts(): AccountConfig[] {
 async function addAccount(): Promise<void> {
   const current = configuredAccounts();
   const name = await vscode.window.showInputBox({
-    title: 'Añadir cuenta de Claude',
-    prompt: 'Un nombre para reconocerla, por ejemplo «Trabajo». Al elegirla, Claude Code te pedirá iniciar sesión.',
-    placeHolder: 'Trabajo',
+    title: t('Add a Claude account'),
+    prompt: t('A name to recognize it, e.g. "Work". When you pick it, Claude Code will ask you to sign in.'),
+    placeHolder: t('Work'),
     validateInput: (v) => {
       const r = newAccountConfig(current, v);
       return 'error' in r ? r.error : undefined;
@@ -639,11 +744,12 @@ async function addAccount(): Promise<void> {
   if (!target) {
     return;
   }
+  log.info(`account added: ${target.id}`);
   fs.mkdirSync(target.dir, { recursive: true });
   // A new account starts with the same model, effort and permissions as the first one.
   if (canCopySettings(primaryAccount(), target)) {
     copySettings(primaryAccount(), target);
-    log.info(`${target.id}: settings.json copiado de ${primaryAccount().id}`);
+    log.info(`${target.id}: settings.json copied from ${primaryAccount().id}`);
   }
   await switchTo(target);
 }
@@ -651,23 +757,28 @@ async function addAccount(): Promise<void> {
 async function removeAccount(): Promise<void> {
   const removable = accounts.filter((a) => a !== primaryAccount() && a !== active);
   if (removable.length === 0) {
-    void vscode.window.showInformationMessage('No hay cuentas que quitar: la primera y la que usa esta ventana se quedan.');
+    void vscode.window.showInformationMessage(t('There are no accounts to remove: the first one and the one this window uses stay.'));
     return;
   }
   const picked = await vscode.window.showQuickPick(
     removable.map((a) => ({ label: a.label, description: readAccountInfo(a).email ?? '', detail: a.dir, account: a })),
-    { title: 'Quitar una cuenta de la lista', placeHolder: 'Elige la cuenta que quieres quitar' },
+    { title: t('Remove an account from the list'), placeHolder: t('Pick the account to remove') },
   );
   if (!picked) {
     return;
   }
+  const remove = t('Remove');
   const choice = await vscode.window.showWarningMessage(
-    `¿Quitar la cuenta «${picked.account.label}» de la lista?`,
-    { modal: true, detail: `No se borra nada: su carpeta (${picked.account.dir}) y su sesión siguen ahí. Si la vuelves a añadir con el mismo nombre, recupera todo.` },
-    'Quitar',
+    t('Remove the account "{0}" from the list?', picked.account.label),
+    {
+      modal: true,
+      detail: t('Nothing is deleted: its folder ({0}) and sign-in stay there. Add it again with the same name to get everything back.', picked.account.dir),
+    },
+    remove,
   );
-  if (choice === 'Quitar') {
+  if (choice === remove) {
     await config().update('accounts', configuredAccounts().filter((c) => c.id !== picked.account.id), vscode.ConfigurationTarget.Global);
+    log.info(`account removed from the list: ${picked.account.id}`);
   }
 }
 
@@ -688,38 +799,40 @@ async function prepareProfile(account: Account, interactive: boolean): Promise<b
     let statuses = ensureSharedFolders(primary, account, names, false);
     const pendingMerge = statuses.filter((s) => s.state === 'non-empty-dir');
     if (pendingMerge.length > 0 && interactive) {
+      const merge = t('Merge and link');
+      const skip = t('Continue without linking');
       const choice = await vscode.window.showWarningMessage(
-        `${pendingMerge.map((p) => p.link).join(', ')} ya tiene contenido.`,
-        { modal: true, detail: `¿Lo muevo a ${primary.dir} y dejo un enlace, para que ambas cuentas compartan historial? Si un archivo ya existe en los dos, se conservan ambos.` },
-        'Fusionar y enlazar',
-        'Seguir sin enlazar',
+        t('{0} already has content.', pendingMerge.map((p) => p.link).join(', ')),
+        { modal: true, detail: t('Move it to {0} and leave a link, so both accounts share history? If a file exists in both, both are kept.', primary.dir) },
+        merge,
+        skip,
       );
       if (choice === undefined) {
         return false;
       }
-      if (choice === 'Fusionar y enlazar') {
+      if (choice === merge) {
         const merged = ensureSharedFolders(primary, account, pendingMerge.map((p) => p.name), true);
         statuses = statuses.map((s) => merged.find((m) => m.name === s.name) ?? s);
       }
     }
     for (const s of statuses) {
-      const line = `${account.id}: ${s.link} → ${s.target}: ${s.state}`;
+      const line = `${account.id}: ${s.name} link ${s.state}`;
       if (s.state === 'foreign-link' || s.state === 'not-a-dir') {
         log.warn(line);
         if (interactive) {
-          void vscode.window.showWarningMessage(`${s.link} no apunta a ${s.target}; no lo toqué.`);
+          void vscode.window.showWarningMessage(t("{0} doesn't point to {1}; left untouched.", s.link, s.target));
         }
       } else {
         log.info(line);
       }
     }
     if (alignCleanupPeriod(primary, account)) {
-      log.info(`${account.id}: cleanupPeriodDays igualado al de ${primary.id} (el historial es compartido)`);
+      log.info(`${account.id}: cleanupPeriodDays aligned with ${primary.id} (shared history)`);
     }
   } catch (e) {
-    log.error(`no se pudo preparar el perfil ${account.id}: ${e}`);
+    log.error(`could not prepare profile ${account.id}: ${e}`);
     if (interactive) {
-      void vscode.window.showErrorMessage(`No se pudo preparar el perfil ${account.label}: ${e instanceof Error ? e.message : e}`);
+      void vscode.window.showErrorMessage(t('Could not prepare the profile {0}: {1}', account.label, e instanceof Error ? e.message : String(e)));
     }
   }
   return true;
@@ -745,22 +858,25 @@ function quotaInfo(): PanelData['quota'] {
     return undefined;
   }
   const samples = history.samples(historyKey(active));
+  const start = pinnedStart(samples, week, resetsAt);
   return {
     account: active.id,
-    days: quotaDays(samples, week, resetsAt),
-    budget: dailyBudget(samples, week, resetsAt),
+    days: quotaDays(samples, week, resetsAt, Date.now(), start),
+    budget: dailyBudget(samples, week, resetsAt, Date.now(), start),
     used7d: usedSince(samples, Date.now() - 7 * 86_400_000),
     recordedSince: samples[0]?.t,
   };
 }
 
 function showUsage(): void {
-  UsagePanel.show(ctx.extensionUri, async (): Promise<PanelData> => {
+  UsagePanel.show(ctx.extensionUri, t('Claude usage'), async (): Promise<PanelData> => {
     refreshUsage();
     const scan = await scanTranscripts(accounts, SCAN_DAYS);
-    log.info(`consumo: ${scan.files} archivos, ${scan.records.length} grupos, ${scan.ms} ms`);
+    log.info(`usage panel: ${scan.files} files, ${scan.records.length} buckets, ${scan.ms} ms`);
     return {
       generatedAt: Date.now(),
+      lang: language(),
+      l10n: translations(),
       accounts: accounts.map((a) => ({
         id: a.id,
         label: a.label,
@@ -776,36 +892,126 @@ function showUsage(): void {
   });
 }
 
-// ---------- diagnostics ----------
+// ---------- diagnostics & problem reports ----------
 
-function diagnostics(): void {
+/** The state of this window, in English, for the log and for problem reports. */
+function stateLines(): string[] {
   const official = vscode.extensions.getExtension(OFFICIAL_ID);
+  const budget = currentBudget();
   const lines = [
-    '--- diagnóstico ---',
-    `switcher ${ctx.extension.packageJSON.version} en ${kindName(ctx.extension.extensionKind)} (pid ${process.pid})`,
-    `cuenta de esta ventana: ${active.id}${stale ? ' (falta reiniciar las extensiones para aplicar un cambio de configuración)' : ''}`,
-    `cuenta que tomó Claude Code (según su lock en <perfil>/ide): ${officialAccount()?.id ?? 'sin confirmar'}`,
-    `CLAUDE_CONFIG_DIR ahora: ${process.env.CLAUDE_CONFIG_DIR ?? 'sin definir'} · al arrancar: ${baseConfigDirEnv() ?? 'sin definir'}`,
-    official ? `Claude Code ${official.packageJSON.version} en ${kindName(official.extensionKind)}, activa=${official.isActive}` : 'Claude Code: no encontrada en este host',
-    `uso de ${active.id}: ${sourceText(activeUsage)}`,
-    `respuestas en curso en esta ventana: ${workingSessions(active, folders()).length}`,
+    `Relevo ${ctx.extension.packageJSON.version} on ${kindLabel(ctx.extension.extensionKind)} (pid ${process.pid})`,
+    `VS Code ${vscode.version} · ${process.platform} ${os.release()} ${process.arch} · remote: ${vscode.env.remoteName ?? 'none'} · UI language: ${vscode.env.language} · Relevo language: ${language()}`,
+    official
+      ? `Claude Code ${official.packageJSON.version} on ${kindLabel(official.extensionKind)}, active=${official.isActive}`
+      : 'Claude Code: not found on this host',
+    `window account: ${active.id}${stale ? ' (settings changed, restart pending)' : ''}${switchingTo ? ` (switching to ${switchingTo.id})` : ''}${pending ? ` (waiting to switch to ${pending.target.id})` : ''}`,
+    `account Claude Code picked up (its ide lock): ${officialAccount()?.id ?? 'not confirmed'}`,
+    `CLAUDE_CONFIG_DIR now: ${process.env.CLAUDE_CONFIG_DIR ?? 'unset'} · at start: ${baseConfigDirEnv() ?? 'unset'}`,
+    `usage: ${activeUsage?.source ?? 'none'}, 5h=${pct(activeUsage?.fiveHour)}, week=${pct(activeUsage?.sevenDay)}, age=${activeUsage && activeUsage.source !== 'none' ? `${Math.round((Date.now() - activeUsage.fetchedAt) / 60000)} min` : '-'}`,
+    budget
+      ? `budget: start=${budget.startPct}% allowance=${round1(budget.allowance)}% used today=${round1(budget.usedToday)}% days left=${budget.daysLeft} partial=${budget.partial}`
+      : 'budget: -',
+    `history samples for ${active.id}: ${history.samples(historyKey(active)).length}`,
+    `working sessions in this window: ${workingSessions(active, folders()).length}`,
+    `workspace folders: ${folders().length}`,
   ];
   const primary = primaryAccount();
   for (const a of accounts) {
     const info = readAccountInfo(a);
-    lines.push(`${a.id}: ${a.dir} · CLAUDE_CONFIG_DIR=${a.envValue ?? 'sin definir'} · sesión=${info.loggedIn ? info.email ?? 'sí' : 'no'}`);
+    lines.push(`account ${a.id}: ${a.dir} · CLAUDE_CONFIG_DIR=${a.envValue ?? 'unset'} · signed in=${info.loggedIn} · label ${a.label === a.id ? 'default' : 'set'}`);
     if (a !== primary) {
       for (const name of config().get<string[]>('sharedFolders', ['projects'])) {
-        const s = linkStatus(primary, a, name);
-        lines.push(`   ${name}: ${s.state} (${s.link} → ${s.target})`);
+        lines.push(`   ${name}: ${linkStatus(primary, a, name).state}`);
       }
     }
   }
   for (const p of problems()) {
-    lines.push(`PROBLEMA: ${p}`);
+    lines.push(`PROBLEM: ${p}`);
   }
-  for (const line of lines) {
+  return lines;
+}
+
+function diagnostics(): void {
+  log.info('--- diagnostics ---');
+  for (const line of stateLines()) {
     log.info(line);
   }
   log.show(true);
+}
+
+/** The latest lines of this extension's log file(s) for this window. */
+function recentLog(): string[] {
+  const dir = ctx.logUri.fsPath;
+  const lines: string[] = [];
+  try {
+    for (const name of fs.readdirSync(dir).filter((n) => n.endsWith('.log')).sort()) {
+      lines.push(...fs.readFileSync(path.join(dir, name), 'utf8').split(/\r?\n/).filter(Boolean));
+    }
+  } catch {
+    // no log file yet
+  }
+  return lines.slice(-REPORT_LOG_LINES);
+}
+
+/**
+ * Builds a report a tester can send: what they were doing, versions, this window's state and the
+ * recent log, with names, emails and paths masked. It opens as a document to review before
+ * sharing, and can be saved or copied.
+ */
+async function reportProblem(): Promise<void> {
+  log.info('--- problem report requested ---');
+  for (const line of stateLines()) {
+    log.info(line);
+  }
+  let user: string | undefined;
+  try {
+    user = os.userInfo().username;
+  } catch {
+    // not available on this platform
+  }
+  const redact = makeRedactor({ home: os.homedir(), username: user, hostname: os.hostname(), folders: folders() });
+  const body = [
+    '# Relevo problem report',
+    '',
+    `Generated: ${new Date().toISOString()}`,
+    '',
+    '## What happened',
+    '',
+    '<!-- What were you doing, what did you expect, and what happened instead? Screenshots help too. -->',
+    '',
+    '',
+    '## State',
+    '',
+    '```',
+    ...stateLines(),
+    '```',
+    '',
+    `## Log (last ${REPORT_LOG_LINES} lines)`,
+    '',
+    '```',
+    ...recentLog(),
+    '```',
+    '',
+  ].join('\n');
+  const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: redact(body) });
+  await vscode.window.showTextDocument(doc);
+  const save = t('Save…');
+  const copy = t('Copy');
+  const choice = await vscode.window.showInformationMessage(
+    t('Problem report ready. Add what happened at the top, then save or copy it and send it. Emails, user and machine names and folder paths are masked.'),
+    save,
+    copy,
+  );
+  if (choice === copy) {
+    await vscode.env.clipboard.writeText(doc.getText());
+  } else if (choice === save) {
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+    const target = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(path.join(os.homedir(), `relevo-report-${stamp}.md`)),
+      filters: { Markdown: ['md'] },
+    });
+    if (target) {
+      await vscode.workspace.fs.writeFile(target, Buffer.from(doc.getText(), 'utf8'));
+    }
+  }
 }

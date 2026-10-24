@@ -6,7 +6,10 @@ import { test } from 'node:test';
 import { discoverProfiles, newAccountConfig, resolveAccounts, slugify } from '../accounts';
 import { alignCleanupPeriod, ensureSharedFolders, linkStatus } from '../profiles';
 import { workingSessions } from '../sessions';
-import { UsageHistory, dailyBudget, quotaDays, usedSince } from '../history';
+import { resolveLanguage, setLanguage, t } from '../i18n';
+import { es } from '../l10n/es';
+import { makeRedactor } from '../report';
+import { UsageHistory, dailyBudget, quotaDayStart, quotaDays, usedSince } from '../history';
 import { costOf } from '../pricing';
 import { scanTranscripts, UNKNOWN_ACCOUNT } from '../transcripts';
 import { effectivePct, parseUtilization, readAccountInfo, readUsage } from '../usage';
@@ -183,7 +186,7 @@ test('new accounts get a readable, unique profile folder', () => {
   assert.equal(slugify('  Trabajo Ñandú! '), 'trabajo-nandu');
   const existing = [{ id: 'A', configDir: '' }, { id: 'B', configDir: '~/.claude-b' }];
   assert.deepEqual(newAccountConfig(existing, ' Trabajo '), { config: { id: 'trabajo', label: 'Trabajo', configDir: '~/.claude-trabajo' } });
-  assert.deepEqual(newAccountConfig(existing, 'b'), { error: 'Ya hay una cuenta con ese nombre.' });
+  assert.deepEqual(newAccountConfig(existing, 'b'), { error: 'An account with that name already exists.' });
   assert.ok('error' in newAccountConfig(existing, '   '));
   assert.ok('error' in newAccountConfig(existing, '***'));
   // "Mi cuenta" and "mi-cuenta" are different names but would share a folder: the second gets a suffix.
@@ -308,4 +311,73 @@ test('an existing install is recognized: the signed-in default profile and hand-
   // A saved list wins over discovery, and an explicit label over the email.
   accounts = resolveAccounts([{ id: 'A', label: 'Personal', configDir: '' }], undefined, home);
   assert.deepEqual(accounts.map((a) => [a.id, a.label]), [['A', 'Personal']]);
+});
+
+test("today's allowance stays put once worked out, even if the history is lost", () => {
+  const home = tempHome();
+  const h = new UsageHistory(home);
+  const resetsAt = Date.UTC(2026, 9, 26, 6, 0);
+  const now = resetsAt - 33 * H; // two quota days left
+  const yesterday = { t: now - 20 * H, week: 93, weekResetsAt: resetsAt };
+  // With yesterday's sample, today started at 93%: 7% left over 2 days.
+  const pin = h.dayStartPct('k', quotaDayStart(resetsAt, now), () => dailyBudget([yesterday], 93, resetsAt, now).startPct);
+  assert.equal(pin, 93);
+  // Later the history is gone (reinstall) and the first sample seen is 94%: the pinned start still applies.
+  const again = h.dayStartPct('k', quotaDayStart(resetsAt, now), () => 94);
+  const b = dailyBudget([], 94, resetsAt, now + H, again);
+  assert.equal(b.allowance, 3.5);
+  assert.equal(b.usedToday, 1);
+  assert.equal(b.leftToday, 2.5);
+  // A new quota day is worked out afresh.
+  assert.equal(h.dayStartPct('k', quotaDayStart(resetsAt, now) + D, () => 95), 95);
+});
+
+test('every user-facing string has a Spanish translation with the same placeholders', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const keys: string[] = require(path.join(__dirname, '..', '..', 'scripts', 'l10n-keys.js'));
+  const placeholders = (s: string) => (s.match(/\{\d+\}/g) ?? []).sort().join();
+  const missing = keys.filter((k) => !(k in es));
+  assert.deepEqual(missing, [], 'untranslated strings');
+  const unused = Object.keys(es).filter((k) => !keys.includes(k));
+  assert.deepEqual(unused, [], 'translations nothing uses');
+  for (const k of keys) {
+    assert.equal(placeholders(es[k]), placeholders(k), `placeholders differ in: ${k}`);
+  }
+});
+
+test('language follows VS Code unless set, and t() formats', () => {
+  assert.equal(resolveLanguage('auto', 'es-pe'), 'es');
+  assert.equal(resolveLanguage(undefined, 'en-us'), 'en');
+  assert.equal(resolveLanguage('es', 'en'), 'es');
+  assert.equal(resolveLanguage('en', 'es'), 'en');
+  setLanguage('es');
+  try {
+    assert.equal(t('Today you have used {0}% and have ~{1}% left.', 1, 2.5), 'Hoy llevas 1% y te quedan ~2.5%.');
+    assert.equal(t('a string nobody translated'), 'a string nobody translated');
+  } finally {
+    setLanguage('en');
+  }
+  assert.equal(t('{0} of {1}', '3%', '9%'), '3% of 9%');
+});
+
+test('problem reports mask the person, the machine and their folders', () => {
+  const redact = makeRedactor({ home: 'C:\\Users\\ana', username: 'ana', hostname: 'DESKTOP-ANA1', folders: ['C:\\Users\\ana\\proj\\secret-app'] });
+  const text = [
+    'account A: C:\\Users\\ana\\.claude · CLAUDE_CONFIG_DIR=c:/users/ana/.claude-b',
+    'cwd C:\\Users\\ana\\proj\\secret-app\\src opened by ana on DESKTOP-ANA1',
+    'signed in as ana.perez@example.com with sk-ant-oat01-abc_DEF',
+    'banana stays',
+  ].join('\n');
+  const out = redact(text);
+  assert.equal(
+    out,
+    [
+      'account A: ~\\.claude · CLAUDE_CONFIG_DIR=~/.claude-b',
+      'cwd <workspace>\\src opened by <user> on <host>',
+      'signed in as <email> with <key>',
+      'banana stays',
+    ].join('\n'),
+  );
+  const linux = makeRedactor({ home: '/home/ana', folders: [] });
+  assert.equal(linux('/home/ana/.claude-b/projects'), '~/.claude-b/projects');
 });

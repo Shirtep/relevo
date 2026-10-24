@@ -1,0 +1,23 @@
+{
+  "description": "Pick which of your Claude Code accounts each VS Code window uses, and spread your weekly quota across the days. Unofficial, not affiliated with Anthropic.",
+  "command.switch": "Switch account for this window",
+  "command.addAccount": "Add account…",
+  "command.removeAccount": "Remove an account from the list…",
+  "command.showUsage": "Usage panel",
+  "command.updateUsage": "Refresh usage (runs Claude Code's /usage)",
+  "command.setupProfiles": "Set up profiles (link history)",
+  "command.diagnostics": "Diagnostics",
+  "command.reportProblem": "Report a problem",
+  "config.accounts": "Accounts and their profile folders. Empty = the account you already use with Claude Code (default profile, `~/.claude`) plus any existing `~/.claude-<name>` profiles with a sign-in. Managed from the status bar (**Add account…**). An empty `configDir` = default profile. The first account owns the shared history. One list for the local machine and remotes; each machine resolves `~` to its own home folder.",
+  "config.accounts.id": "Short identifier.",
+  "config.accounts.label": "Name shown; by default, the part of the email before the @.",
+  "config.accounts.configDir": "Profile folder (~ allowed). Empty = default profile.",
+  "config.defaultAccount": "Id of the account a window uses before you pick one (A = Claude Code's default profile).",
+  "config.sharedFolders": "Folders of the other accounts that link to the first one's. `projects` shares the history (for `/resume`). Others you can add: `skills`, `agents`, `commands`, `file-history`.",
+  "config.refreshIntervalMinutes": "How often, in minutes, the usage Claude Code stored is re-read (no network requests).",
+  "config.statusBarUsage": "What to show of the usage in the status bar.",
+  "config.statusBarUsage.active": "This window's account usage",
+  "config.statusBarUsage.off": "Don't show usage",
+  "config.language.auto": "Follow VS Code's display language",
+  "config.language": "Language of Relevo's status bar, messages and usage panel. Command names follow VS Code's display language."
+}
