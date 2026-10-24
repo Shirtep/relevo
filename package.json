@@ -1,0 +1,207 @@
+{
+  "name": "relevo",
+  "displayName": "Relevo",
+  "description": "Pick which of your Claude Code accounts each VS Code window uses, and spread your weekly quota across the days. Unofficial, not affiliated with Anthropic.",
+  "version": "0.1.0",
+  "publisher": "a-shirtep",
+  "author": {
+    "name": "Shirtep"
+  },
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Shirtep/relevo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Shirtep/relevo/issues"
+  },
+  "homepage": "https://github.com/Shirtep/relevo#readme",
+  "keywords": [
+    "claude code",
+    "accounts",
+    "multi-account",
+    "usage",
+    "quota",
+    "switcher"
+  ],
+  "galleryBanner": {
+    "color": "#1f1f1f",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace",
+    "ui"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "*",
+    "onWebviewPanel:claudeVSCodePanel",
+    "onView:claudeVSCodeSidebar",
+    "onView:claudeVSCodeSidebarSecondary",
+    "onView:claudeVSCodeSessionsList",
+    "onCommand:claude-vscode.editor.open",
+    "onCommand:claude-vscode.editor.openLast",
+    "onCommand:claude-vscode.primaryEditor.open",
+    "onCommand:claude-vscode.window.open",
+    "onCommand:claude-vscode.createWorktree",
+    "onCommand:claude-vscode.sidebar.open",
+    "onCommand:claude-vscode.newConversation",
+    "onCommand:claude-vscode.reopenClosedSession",
+    "onCommand:claude-vscode.update",
+    "onCommand:claude-vscode.focus",
+    "onCommand:claude-vscode.focusLastMessage",
+    "onCommand:claude-vscode.blur",
+    "onCommand:claude-vscode.logout",
+    "onCommand:claude-vscode.terminal.open",
+    "onCommand:claude-vscode.acceptProposedDiff",
+    "onCommand:claude-vscode.rejectProposedDiff",
+    "onCommand:claude-vscode.acceptProposedHunk",
+    "onCommand:claude-vscode.rejectProposedHunk",
+    "onCommand:claude-vscode.acceptProposedHunkFromBar",
+    "onCommand:claude-vscode.rejectProposedHunkFromBar",
+    "onCommand:claude-vscode.insertAtMention",
+    "onCommand:claude-vscode.installPlugin",
+    "onCommand:claude-code.acceptProposedDiff",
+    "onCommand:claude-code.rejectProposedDiff",
+    "onCommand:claude-code.insertAtMentioned",
+    "onCommand:claude-vscode.showLogs",
+    "onCommand:claude-vscode.toggleFocusView",
+    "onCommand:claude-vscode.openWalkthrough",
+    "onCommand:claude-vscode.markSessionUnread",
+    "onCommand:claude-vscode.renameSessionTab",
+    "onCommand:claude-vscode.addSessionTabToGroup",
+    "onWalkthrough:claude-code-walkthrough",
+    "onUri"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "relevo.switch",
+        "title": "Cambiar cuenta de esta ventana",
+        "category": "Relevo"
+      },
+      {
+        "command": "relevo.addAccount",
+        "title": "Añadir cuenta…",
+        "category": "Relevo"
+      },
+      {
+        "command": "relevo.removeAccount",
+        "title": "Quitar una cuenta de la lista…",
+        "category": "Relevo"
+      },
+      {
+        "command": "relevo.showUsage",
+        "title": "Ver consumo",
+        "category": "Relevo"
+      },
+      {
+        "command": "relevo.updateUsage",
+        "title": "Actualizar uso (ejecuta /usage de Claude Code)",
+        "category": "Relevo"
+      },
+      {
+        "command": "relevo.setupProfiles",
+        "title": "Preparar perfiles (enlazar historial)",
+        "category": "Relevo"
+      },
+      {
+        "command": "relevo.diagnostics",
+        "title": "Diagnóstico",
+        "category": "Relevo"
+      }
+    ],
+    "configuration": {
+      "title": "Relevo",
+      "properties": {
+        "relevo.accounts": {
+          "type": "array",
+          "markdownDescription": "Cuentas disponibles. Vacío = la cuenta con la que ya usas Claude Code (perfil por defecto, `~/.claude`) más los perfiles `~/.claude-<nombre>` que ya existan con una sesión. Se gestiona desde la barra de estado (**Añadir cuenta…**). `configDir` vacío = perfil por defecto. La primera cuenta es la dueña del historial compartido. Es una sola lista para el equipo local y los remotos; cada equipo resuelve `~` en su propia carpeta de usuario.",
+          "default": [],
+          "items": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Identificador corto (se muestra en la barra de estado)."
+              },
+              "label": {
+                "type": "string",
+                "description": "Nombre a mostrar; por defecto, la parte del email antes de la @."
+              },
+              "configDir": {
+                "type": "string",
+                "description": "Carpeta de perfil (admite ~). Vacío = perfil por defecto."
+              }
+            }
+          },
+          "scope": "application"
+        },
+        "relevo.defaultAccount": {
+          "type": "string",
+          "default": "A",
+          "description": "Id de la cuenta que usa una ventana en la que todavía no elegiste ninguna (A = la cuenta por defecto de Claude Code).",
+          "scope": "application"
+        },
+        "relevo.sharedFolders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "projects"
+          ],
+          "markdownDescription": "Carpetas de los demás perfiles que se enlazan a las de la primera cuenta. `projects` comparte el historial (para `/resume`). Otras útiles: `skills`, `agents`, `commands`, `file-history`.",
+          "scope": "application"
+        },
+        "relevo.refreshIntervalMinutes": {
+          "type": "number",
+          "default": 1,
+          "minimum": 1,
+          "description": "Cada cuántos minutos se relee el % de uso que guarda Claude Code (no hace peticiones de red).",
+          "scope": "application"
+        },
+        "relevo.statusBarUsage": {
+          "type": "string",
+          "enum": [
+            "active",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Mostrar el uso de la cuenta de esta ventana",
+            "No mostrar el uso"
+          ],
+          "default": "active",
+          "scope": "application",
+          "description": "Qué mostrar del % de uso en la barra de estado (el último que guardó Claude Code para la cuenta de esta ventana)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "test": "npm run compile && node --test out/test/*.test.js",
+    "vscode:prepublish": "npm run compile",
+    "sync-activation": "node scripts/sync-activation-events.js",
+    "package": "vsce package --allow-star-activation",
+    "test:e2e": "node e2e/run.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/vscode": "1.90.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.6.0",
+    "typescript": "^5.9.0"
+  }
+}
