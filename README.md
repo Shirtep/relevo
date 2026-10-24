@@ -1,24 +1,51 @@
-# Relevo
+<p align="center">
+  <img src="docs/banner.png" alt="Relevo: one Claude Code account per VS Code window, and a daily budget for your weekly quota" width="100%">
+</p>
 
-🇪🇸 [Leer en español](README.es.md)
+<p align="center">
+  <a href="https://github.com/Shirtep/relevo/releases"><img alt="release" src="https://img.shields.io/badge/release-v0.2.0-3987e5?style=flat-square"></a>
+  <img alt="VS Code" src="https://img.shields.io/badge/VS%20Code-%E2%89%A51.90-007acc?style=flat-square">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-eb6834?style=flat-square">
+  <img alt="unofficial" src="https://img.shields.io/badge/unofficial-community-555?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="#installation">Install</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#privacy-and-terms-of-use">Privacy</a> ·
+  <a href="#reporting-a-problem">Report a problem</a> ·
+  <a href="README.es.md">🇪🇸 Español</a>
+</p>
+
+# Relevo
 
 **Pick, per VS Code window, which of your accounts Claude Code uses, and spread your weekly quota across the days.**
 
-> Relevo is an **unofficial** community extension. It is not made, endorsed or reviewed by Anthropic. "Claude" and "Claude Code" are trademarks of Anthropic, PBC, mentioned here only to say what Relevo works with.
-
 Relevo is a companion to the official [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code) extension. It is for people with more than one Claude account of their own (say, personal and work) who want each window to use the right one.
 
-> The interface is in English and Spanish: the `relevo.language` setting picks it (by default it follows VS Code's language).
+> [!NOTE]
+> Relevo is an **unofficial** community extension. It is not made, endorsed or reviewed by Anthropic. "Claude" and "Claude Code" are trademarks of Anthropic, PBC, mentioned here only to say what Relevo works with.
+
+## Highlights
+
+| Feature | What you get |
+|---|---|
+| 🔀 **Account per window** | Each VS Code window keeps its own account. Switching restarts only that window's extensions; files, tabs and terminals stay open. |
+| ✋ **Never mid-answer** | While Claude is answering, Relevo waits and switches when it's done. |
+| 📊 **Daily budget** | `today 6/14%`: what you've used today against a fair share of what's left of the week. Skip a day and the next ones get more. |
+| 🔁 **Shared history** | `/resume` works across accounts. |
+| 🔒 **100% local** | No network requests, no credentials or tokens read. Sign-in is always Claude Code's own. |
+| 🌐 **English / Español** | Follows VS Code's language, or pick one with `relevo.language`. |
 
 ## Usage
 
 **After installing** there is no need to sign in again: Relevo recognizes the account you already use with Claude Code (shown by the name in your email) and any `~/.claude-<name>` profiles you already have signed in. From there, you only add new accounts.
 
-**Switch accounts.** Click **`Claude: A`** in the status bar and pick an account. Only that window's extensions restart (your files, tabs and terminals stay open) and Claude Code starts with the chosen account. Each window remembers its account.
+**Switch accounts.** Click **`Claude: <account>`** in the status bar and pick an account. Only that window's extensions restart (your files, tabs and terminals stay open) and Claude Code starts with the chosen account. Each window remembers its account.
 
 **Add an account.** In the same list, **Add account…** → type a name, e.g. "Work". Relevo creates its profile folder and switches the window to it; Claude Code then shows **its own sign-in form**. Relevo never sees your password or tokens: sign-in happens entirely in Anthropic's official flow. If your browser is already signed in to another claude.ai account, use a private window.
 
-**Remove an account.** **Remove an account from the list…**. Nothing is deleted: its folder and sign-in stay where they were.
+**Remove an account.** In the same list, **Remove an account from the list…**. Nothing is deleted: its folder and sign-in stay where they were.
 
 **While Claude is answering**, Relevo will not switch (it would cut the answer short); it offers to switch when the answer is done.
 

@@ -11,3 +11,4 @@ e2e/**
 .gitignore
 scripts/**
 .github/**
+docs/**

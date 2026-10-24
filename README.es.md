@@ -1,24 +1,51 @@
-# Relevo
+<p align="center">
+  <img src="docs/banner.es.png" alt="Relevo: una cuenta de Claude Code por ventana, y un presupuesto diario para tu cuota semanal" width="100%">
+</p>
 
-🇬🇧 [Read in English](README.md)
+<p align="center">
+  <a href="https://github.com/Shirtep/relevo/releases"><img alt="release" src="https://img.shields.io/badge/release-v0.2.0-3987e5?style=flat-square"></a>
+  <img alt="VS Code" src="https://img.shields.io/badge/VS%20Code-%E2%89%A51.90-007acc?style=flat-square">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-eb6834?style=flat-square">
+  <img alt="no oficial" src="https://img.shields.io/badge/no%20oficial-comunidad-555?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="#instalación">Instalación</a> ·
+  <a href="#uso">Uso</a> ·
+  <a href="#privacidad-y-términos-de-uso">Privacidad</a> ·
+  <a href="#reportar-un-problema">Reportar un problema</a> ·
+  <a href="README.md">🇬🇧 English</a>
+</p>
+
+# Relevo
 
 **Elige, por ventana de VS Code, con cuál de tus cuentas trabaja Claude Code, y reparte tu cuota semanal por día.**
 
-> La interfaz está en inglés y español: el ajuste `relevo.language` la elige (por defecto sigue el idioma de VS Code).
+Relevo acompaña a la extensión oficial [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code). Sirve si tienes más de una cuenta propia de Claude (por ejemplo, personal y del trabajo) y quieres que cada ventana use la que corresponde.
 
+> [!NOTE]
 > Relevo es una extensión **no oficial**, de la comunidad. No está hecha, respaldada ni revisada por Anthropic. "Claude" y "Claude Code" son marcas de Anthropic, PBC, y aquí se mencionan solo para indicar con qué funciona.
 
-Relevo acompaña a la extensión oficial [Claude Code](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code). Sirve si tienes más de una cuenta propia de Claude (por ejemplo, personal y del trabajo) y quieres que cada ventana use la que corresponde.
+## Lo principal
+
+| Función | Qué obtienes |
+|---|---|
+| 🔀 **Cuenta por ventana** | Cada ventana de VS Code mantiene su cuenta. Al cambiar se reinician solo sus extensiones; archivos, pestañas y terminales siguen abiertos. |
+| ✋ **Nunca a media respuesta** | Si Claude está respondiendo, Relevo espera y cambia al terminar. |
+| 📊 **Presupuesto diario** | `hoy 6/14%`: lo que llevas hoy frente a una parte justa de lo que queda de la semana. Si un día no la usas, los siguientes tienen más. |
+| 🔁 **Historial compartido** | `/resume` funciona entre cuentas. |
+| 🔒 **100 % local** | Sin peticiones de red y sin leer credenciales ni tokens. El inicio de sesión es siempre el de Claude Code. |
+| 🌐 **English / Español** | Sigue el idioma de VS Code, o elige uno con `relevo.language`. |
 
 ## Uso
 
 **Al instalarla** no hay que volver a iniciar sesión: Relevo reconoce la cuenta con la que ya usas Claude Code (aparece con el nombre de tu email) y también los perfiles `~/.claude-<nombre>` que ya tengas con sesión iniciada. Desde ahí, solo añades las cuentas nuevas.
 
-**Cambiar de cuenta.** Haz clic en **`Claude: A`** en la barra de estado y elige la cuenta. Se reinician solo las extensiones de esa ventana (tus archivos, pestañas y terminales siguen abiertos) y Claude Code arranca con la cuenta elegida. Cada ventana recuerda su cuenta.
+**Cambiar de cuenta.** Haz clic en **`Claude: <cuenta>`** en la barra de estado y elige la cuenta. Se reinician solo las extensiones de esa ventana (tus archivos, pestañas y terminales siguen abiertos) y Claude Code arranca con la cuenta elegida. Cada ventana recuerda su cuenta.
 
 **Añadir una cuenta.** En la misma lista, **Añadir cuenta…** → escribe un nombre (por ejemplo «Trabajo»). Relevo crea su carpeta de perfil y cambia la ventana a esa cuenta; Claude Code muestra entonces **su propio formulario de inicio de sesión**. Relevo nunca ve tu contraseña ni tus tokens: el inicio de sesión ocurre por completo en el flujo oficial de Anthropic. Si el navegador ya tiene abierta otra cuenta de claude.ai, usa una ventana de incógnito.
 
-**Quitar una cuenta.** **Quitar una cuenta de la lista…** No borra nada: su carpeta y su sesión quedan donde estaban.
+**Quitar una cuenta.** En la misma lista, **Quitar una cuenta de la lista…**. No borra nada: su carpeta y su sesión quedan donde estaban.
 
 **Si Claude está respondiendo**, Relevo no cambia de cuenta (cortaría la respuesta): ofrece **Cambiar cuando termine**.
 

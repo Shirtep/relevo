@@ -1,0 +1,78 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1280px;height:360px;overflow:hidden;background:transparent}
+.banner{position:relative;width:1280px;height:360px;border-radius:24px;overflow:hidden;
+  background:
+    radial-gradient(620px 380px at 8% -10%, rgba(57,135,229,.30), transparent 70%),
+    radial-gradient(560px 360px at 100% 115%, rgba(235,104,52,.26), transparent 70%),
+    linear-gradient(135deg,#14171c 0%,#0f1115 100%);
+  font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;color:#f0efec}
+.grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:32px 32px;mask-image:linear-gradient(90deg,transparent,#000 30%,#000 70%,transparent)}
+.main{position:absolute;left:72px;top:58px;display:flex;align-items:center;gap:36px}
+.icon{width:148px;height:148px;filter:drop-shadow(0 12px 28px rgba(0,0,0,.45))}
+h1{font-size:96px;font-weight:700;letter-spacing:-2px;line-height:1}
+.tag{margin-top:14px;font-size:28px;color:#c3c2b7;font-weight:400}
+.tag b{color:#f0efec;font-weight:600}
+.pills{margin-top:20px;display:flex;gap:10px}
+.pill{font-size:17px;padding:6px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#c3c2b7}
+.pill i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:1px}
+.status{position:absolute;left:0;right:0;bottom:0;height:44px;background:#181a1f;border-top:1px solid rgba(255,255,255,.08);display:flex;justify-content:flex-end;align-items:center;gap:6px;padding:0 22px;font-family:"Segoe UI",system-ui,sans-serif;font-size:17px;color:#cccccc}
+.item{display:flex;align-items:center;gap:8px;padding:5px 12px;border-radius:6px}
+.item.hl{background:rgba(255,255,255,.08)}
+.item svg{width:18px;height:18px;stroke:#cccccc;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.sep{color:#6b6b6b}
+.ok{color:#5fb878}
+.left{margin-right:auto;color:#8b8b8b;display:flex;align-items:center;gap:8px}
+.left svg{width:16px;height:16px;stroke:#8b8b8b;fill:none;stroke-width:1.6}
+.chart{position:absolute;right:64px;top:64px;width:330px;padding:18px 20px 14px;border-radius:16px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);font-family:"Segoe UI",system-ui,sans-serif}
+.chart .t{font-size:15px;color:#c3c2b7;margin-bottom:12px;display:flex;justify-content:space-between}
+.chart .t b{color:#f0efec;font-weight:600}
+.bars{display:flex;align-items:flex-end;gap:12px;height:150px;border-bottom:1px solid rgba(255,255,255,.18)}
+.bar{flex:1;border-radius:5px 5px 0 0}
+.bar.used{background:#3987e5}
+.bar.ghost{background:rgba(255,255,255,.05);border:1.5px dashed rgba(255,255,255,.28);border-bottom:none}
+.bar.today{position:relative;background:linear-gradient(to top,#3987e5 0 43%,rgba(255,255,255,.05) 43%);border:1.5px dashed rgba(255,255,255,.28);border-bottom:none}
+.days{display:flex;gap:12px;margin-top:8px;font-size:13px;color:#8b8b8b}
+.days span{flex:1;text-align:center}
+.days .now{color:#f0efec;font-weight:600}
+</style></head><body>
+<div class="banner">
+  <div class="grid"></div>
+  <div class="main">
+    <svg class="icon" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+      <rect x="8" y="8" width="240" height="240" rx="52" fill="#1f2328" stroke="rgba(255,255,255,.08)" stroke-width="2"/>
+      <g fill="none" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M64 100 H172" stroke="#3987e5"/><path d="M150 74 L180 100 L150 126" stroke="#3987e5"/>
+        <path d="M192 156 H84" stroke="#eb6834"/><path d="M106 130 L76 156 L106 182" stroke="#eb6834"/>
+      </g>
+    </svg>
+    <div>
+      <h1>Relevo</h1>
+      <div class="tag">One <b>Claude Code</b> account per VS Code window,<br>and a daily budget for your weekly quota.</div>
+      <div class="pills">
+        <span class="pill"><i style="background:#3987e5"></i>Personal</span>
+        <span class="pill"><i style="background:#eb6834"></i>Work</span>
+        <span class="pill">100% local · no tokens read</span>
+      </div>
+    </div>
+  </div>
+  <div class="chart">
+    <div class="t"><span>Weekly quota per day</span><b>today 6 / 14%</b></div>
+    <div class="bars">
+      <div class="bar used" style="height:96%"></div>
+      <div class="bar used" style="height:6%"></div>
+      <div class="bar used" style="height:68%"></div>
+      <div class="bar today" style="height:54%"></div>
+      <div class="bar ghost" style="height:54%"></div>
+      <div class="bar ghost" style="height:54%"></div>
+      <div class="bar ghost" style="height:54%"></div>
+    </div>
+    <div class="days"><span>Tue</span><span>Wed</span><span>Thu</span><span class="now">today</span><span>Sat</span><span>Sun</span><span>Mon</span></div>
+  </div>
+  <div class="status">
+    <span class="left"><svg viewBox="0 0 16 16"><circle cx="5" cy="5" r="2"/><circle cx="11" cy="11" r="2"/><path d="M5 7v2a2 2 0 0 0 2 2h2"/></svg>main</span>
+    <span class="item hl"><svg viewBox="0 0 16 16"><circle cx="8" cy="5.5" r="2.6"/><path d="M3 13.5c.8-2.6 2.8-3.8 5-3.8s4.2 1.2 5 3.8"/></svg>Claude: work</span>
+    <span class="item"><svg viewBox="0 0 16 16"><path d="M2 12l3.5-4 3 2.5L14 4"/></svg>5h 31% <span class="sep">·</span> wk 49% <span class="sep">·</span> today <span class="ok">6/14%</span> <span class="sep">·</span> <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>12 min</span>
+  </div>
+</div>
+</body></html>
