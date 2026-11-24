@@ -20,3 +20,6 @@ principal, así `/resume` y `--continue` funcionan entre cuentas. Un `claude` no
 
 Una conversación abierta no puede cambiar de cuenta en caliente: sal (`/exit`) y vuelve a entrar con
 `relevo <otra> --continue`.
+
+Privacidad: a diferencia de la extensión, para mostrar el uso al momento lee el token de sesión de cada cuenta
+(`.credentials.json`) y consulta el endpoint de uso de Anthropic. Sin conexión o con la sesión caducada, usa el dato que guardó Claude Code.

@@ -12,6 +12,7 @@
 <p align="center">
   <a href="#instalación">Instalación</a> ·
   <a href="#uso">Uso</a> ·
+  <a href="#terminal-claude-code-en-la-terminal">Terminal</a> ·
   <a href="#privacidad-y-términos-de-uso">Privacidad</a> ·
   <a href="#reportar-un-problema">Reportar un problema</a> ·
   <a href="README.md">🇬🇧 English</a>
@@ -34,7 +35,8 @@ Relevo acompaña a la extensión oficial [Claude Code](https://marketplace.visua
 | ✋ **Nunca a media respuesta** | Si Claude está respondiendo, Relevo espera y cambia al terminar. |
 | 📊 **Presupuesto diario** | `hoy 6/14%`: lo que llevas hoy frente a una parte justa de lo que queda de la semana. Si un día no la usas, los siguientes tienen más. |
 | 🔁 **Historial compartido** | `/resume` funciona entre cuentas. |
-| 🔒 **100 % local** | Sin peticiones de red y sin leer credenciales ni tokens. El inicio de sesión es siempre el de Claude Code. |
+| 🔒 **100 % local** | La extensión no hace peticiones de red ni lee credenciales o tokens. El inicio de sesión es siempre el de Claude Code. |
+| ⌨️ **También en la terminal** | `relevo b` abre Claude Code en una terminal con la cuenta `b`; cada terminal mantiene la suya. Ver [Terminal](#terminal-claude-code-en-la-terminal). |
 | 🌐 **English / Español** | Sigue el idioma de VS Code, o elige uno con `relevo.language`. |
 
 ## Uso
@@ -58,9 +60,31 @@ Relevo acompaña a la extensión oficial [Claude Code](https://marketplace.visua
 - *Modelos y esfuerzo*: modelo y nivel de esfuerzo usados en este equipo, con su peso relativo y un ≈ % de la cuota aproximado.
 - *Proyectos*: reparto del uso por proyecto en este equipo.
 
+## Terminal (Claude Code en la terminal)
+
+La extensión solo funciona dentro de VS Code. Para Claude Code en una terminal normal, el repo incluye un comando pequeño, `relevo` ([`cli/relevo.py`](cli/relevo.py), Python 3, Linux/macOS), que hace lo mismo por **terminal**: cada terminal elige su cuenta, así varias terminales pueden usar cuentas distintas a la vez. Un `claude` a secas sigue usando tu primera cuenta.
+
+```bash
+ln -s "$PWD/cli/relevo.py" ~/.local/bin/relevo
+```
+
+| Comando | Qué hace |
+|---|---|
+| `relevo` | Muestra el uso de 5 horas y semanal de cada cuenta, recomienda la más libre y abre `claude` con la que elijas |
+| `relevo b` | Abre `claude` con la cuenta `b` (`relevo a` = tu primera cuenta, `~/.claude`) |
+| `relevo b --continue` | Lo que va detrás de la cuenta se le pasa a `claude`: aquí, seguir la última conversación con la cuenta `b` |
+| `relevo uso` | Solo muestra el uso |
+| `relevo cual` | Qué cuenta usa esta terminal |
+| `relevo nueva <nombre>` | Crea `~/.claude-<nombre>` con el historial compartido y abre `claude` para iniciar sesión |
+
+Usa las mismas carpetas de perfil que la extensión (`~/.claude` = `a`, `~/.claude-<nombre>` = las demás), define `CLAUDE_CONFIG_DIR` solo para el `claude` que lanza y enlaza `projects` de cada cuenta al de la primera, así `/resume` y `--continue` funcionan entre cuentas. Una conversación abierta no puede cambiar de cuenta: sal (`/exit`) y ejecuta `relevo <otra> --continue`.
+
+> [!IMPORTANT]
+> A diferencia de la extensión, el comando de terminal **sí hace una petición de red**: para mostrar el uso al momento lee el token de sesión de cada cuenta en su carpeta de perfil (`.credentials.json`) y consulta el endpoint de uso de Anthropic, el mismo que usa Claude Code. El token no sale de tu equipo salvo en esa petición a Anthropic. Sin conexión, o con la sesión caducada, muestra el dato que guardó Claude Code.
+
 ## Privacidad y términos de uso
 
-- **Todo es local.** Relevo no hace peticiones de red, no lee archivos de credenciales ni tokens y no envía datos a ningún sitio. Solo lee archivos de configuración que Claude Code escribe en tu carpeta de perfil (por ejemplo, el % de uso que Claude Code guardó) y tu historial local.
+- **Todo es local** (la extensión de VS Code; el comando de terminal se explica en [Terminal](#terminal-claude-code-en-la-terminal)). Relevo no hace peticiones de red, no lee archivos de credenciales ni tokens y no envía datos a ningún sitio. Solo lee archivos de configuración que Claude Code escribe en tu carpeta de perfil (por ejemplo, el % de uso que Claude Code guardó) y tu historial local.
 - **Actualizar uso** ejecuta el comando `/usage` de tu Claude Code instalado, sin modificar, solo cuando haces clic. Es Claude Code quien consulta el uso, con su propio inicio de sesión.
 - **El inicio de sesión es siempre el oficial.** Relevo solo indica a Claude Code qué carpeta de perfil usar, con la variable [`CLAUDE_CONFIG_DIR`](https://code.claude.com/docs/en/env-vars). No modifica Claude Code ni su binario.
 - **Usa solo cuentas tuyas.** Cada cuenta debe ser tuya, con su propia suscripción, iniciada por ti. Los [Términos de consumidor de Anthropic](https://www.anthropic.com/legal/consumer-terms) prohíben compartir cuentas, y los [términos de Claude Code](https://code.claude.com/docs/en/legal-and-compliance) indican que los límites de los planes suponen un uso individual y ordinario. Relevo es para organizar tus cuentas, no para eludir límites: eres responsable de usarlo de acuerdo con esos términos.
